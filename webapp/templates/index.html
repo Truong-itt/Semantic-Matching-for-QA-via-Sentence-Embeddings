@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sentence Selection QA — Demo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+
+<!-- ═══════════════════════  HEADER  ═══════════════════════ -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-icon">🔍</span>
+      <div>
+        <div class="logo-title">Sentence Selection QA</div>
+        <div class="logo-sub">Semantic Matching via Sentence Embeddings</div>
+      </div>
+    </div>
+    <nav class="nav-tabs">
+      <button class="nav-btn active" data-tab="demo">🎯 Demo</button>
+      <button class="nav-btn" data-tab="compare">⚖️ Compare</button>
+      <button class="nav-btn" data-tab="about">📖 About</button>
+    </nav>
+  </div>
+</header>
+
+<!-- ═══════════════════════  MAIN  ═══════════════════════ -->
+<main class="container">
+
+  <!-- ──────────────  TAB: DEMO  ────────────── -->
+  <section class="tab-content active" id="tab-demo">
+    <div class="two-col">
+
+      <!-- LEFT: Input panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-icon">✏️</span> Input
+        </div>
+
+        <!-- Example selector -->
+        <div class="form-group">
+          <label>💡 Quick Examples</label>
+          <div class="example-chips" id="example-chips">
+            {% for ex in examples %}
+            <button class="chip" data-idx="{{ loop.index0 }}">{{ ex.title }}</button>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Question input -->
+        <div class="form-group">
+          <label for="question">❓ Question</label>
+          <input
+            type="text"
+            id="question"
+            placeholder="e.g. Who invented the World Wide Web?"
+            autocomplete="off"
+          />
+        </div>
+
+        <!-- Context input -->
+        <div class="form-group">
+          <label for="context">📄 Context Paragraph</label>
+          <textarea
+            id="context"
+            rows="8"
+            placeholder="Paste a paragraph here. The system will split it into sentences and select the best answer."
+          ></textarea>
+          <div class="hint">Tip: 3–8 sentences works best.</div>
+        </div>
+
+        <!-- Metric selector -->
+        <div class="form-group">
+          <label>📐 Similarity Metric</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="metric" value="cosine" checked />
+              <span class="radio-box">Cosine <span class="badge recommended">Recommended</span></span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="metric" value="euclidean" />
+              <span class="radio-box">Euclidean</span>
+            </label>
+          </div>
+        </div>
+
+        <button class="btn-primary" id="btn-predict">
+          <span class="btn-text">🚀 Find Answer Sentence</span>
+          <span class="btn-loader hidden">⏳ Processing…</span>
+        </button>
+      </div>
+
+      <!-- RIGHT: Result panel -->
+      <div class="panel" id="result-panel">
+        <div class="panel-header">
+          <span class="panel-icon">📊</span> Results
+          <span id="result-metric-badge" class="metric-badge hidden"></span>
+        </div>
+
+        <div id="result-placeholder" class="placeholder-msg">
+          <div class="placeholder-icon">🤔</div>
+          <p>Enter a question and context, then click <strong>Find Answer Sentence</strong>.</p>
+        </div>
+
+        <div id="result-content" class="hidden">
+          <!-- Answer highlight box -->
+          <div class="answer-box" id="answer-box">
+            <div class="answer-label">✅ Selected Answer Sentence</div>
+            <div class="answer-text" id="answer-text"></div>
+            <div class="answer-score" id="answer-score"></div>
+          </div>
+
+          <!-- All sentences with score bars -->
+          <div class="sentences-label">All Sentences — Similarity Scores</div>
+          <div id="sentences-list"></div>
+        </div>
+
+        <div id="result-error" class="error-msg hidden"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ──────────────  TAB: COMPARE  ────────────── -->
+  <section class="tab-content" id="tab-compare">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-icon">⚖️</span> Side-by-Side Comparison: Cosine vs Euclidean
+      </div>
+
+      <div class="form-row">
+        <div class="form-group flex1">
+          <label for="cmp-question">❓ Question</label>
+          <input type="text" id="cmp-question" placeholder="Enter question…" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="cmp-context">📄 Context</label>
+        <textarea id="cmp-context" rows="6" placeholder="Enter context paragraph…"></textarea>
+      </div>
+
+      <div class="form-row" style="margin-bottom:0">
+        <button class="btn-primary" id="btn-compare">
+          <span class="btn-text">⚖️ Compare Both Metrics</span>
+          <span class="btn-loader hidden">⏳ Comparing…</span>
+        </button>
+        <div class="example-chips" id="cmp-example-chips">
+          {% for ex in examples %}
+          <button class="chip" data-idx="{{ loop.index0 }}" data-target="compare">{{ ex.title }}</button>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div id="compare-results" class="hidden">
+      <div class="two-col compare-cols">
+        <!-- Cosine -->
+        <div class="panel">
+          <div class="panel-header result-cosine">
+            <span>📐 Cosine Similarity</span>
+          </div>
+          <div class="answer-box cosine-box" id="cmp-cosine-answer">
+            <div class="answer-label">✅ Selected</div>
+            <div class="answer-text" id="cmp-cosine-text"></div>
+          </div>
+          <div id="cmp-cosine-list"></div>
+        </div>
+        <!-- Euclidean -->
+        <div class="panel">
+          <div class="panel-header result-euclidean">
+            <span>📏 Euclidean Distance</span>
+          </div>
+          <div class="answer-box euclidean-box" id="cmp-euclidean-answer">
+            <div class="answer-label">✅ Selected</div>
+            <div class="answer-text" id="cmp-euclidean-text"></div>
+          </div>
+          <div id="cmp-euclidean-list"></div>
+        </div>
+      </div>
+
+      <!-- Agreement indicator -->
+      <div class="agreement-box" id="agreement-box"></div>
+    </div>
+  </section>
+
+  <!-- ──────────────  TAB: ABOUT  ────────────── -->
+  <section class="tab-content" id="tab-about">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-icon">📖</span> About This Project</div>
+
+      <div class="about-grid">
+        <div class="about-card">
+          <div class="about-card-title">🎯 Task</div>
+          <p>
+            <strong>Sentence Selection QA</strong> — Given a question and a context paragraph,
+            the system selects the <em>single sentence</em> most likely to contain the answer.
+          </p>
+        </div>
+        <div class="about-card">
+          <div class="about-card-title">📚 Dataset</div>
+          <p>
+            <strong>SQuAD v1.1</strong> — 87 k training samples. Converted from
+            span-extraction format by locating which sentence contains the answer span.
+          </p>
+        </div>
+        <div class="about-card">
+          <div class="about-card-title">🧮 Encoder (this demo)</div>
+          <p>
+            <strong>TF-IDF + Truncated SVD</strong> (256-dim). Lightweight, no GPU needed.
+            Optionally upgradeable to <em>Sentence-BERT</em> for higher accuracy.
+          </p>
+        </div>
+        <div class="about-card">
+          <div class="about-card-title">📐 Metrics</div>
+          <p>
+            <strong>Cosine Similarity</strong> — angle between vectors, scale-invariant.<br/>
+            <strong>Euclidean Distance</strong> — straight-line distance, magnitude-sensitive.
+          </p>
+        </div>
+      </div>
+
+      <h3 class="pipeline-title">🔄 Pipeline</h3>
+      <div class="pipeline-steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <div class="step-name">Sentence Tokenise</div>
+            <div class="step-desc">Split context into sentences using NLTK</div>
+          </div>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <div class="step-name">Encode</div>
+            <div class="step-desc">Q → 256-dim vector, each Sᵢ → 256-dim vector</div>
+          </div>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <div class="step-name">Score</div>
+            <div class="step-desc">Compute similarity(Q, Sᵢ) for all i</div>
+          </div>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <div class="step-name">Select</div>
+            <div class="step-desc">argmax → highest scoring sentence</div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="pipeline-title">📊 Expected Model Performance (SQuAD val)</h3>
+      <table class="results-table">
+        <thead>
+          <tr>
+            <th>System</th><th>Acc@1</th><th>Acc@3</th><th>MRR</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>TF-IDF + Cosine</td><td>~0.55</td><td>~0.78</td><td>~0.65</td></tr>
+          <tr><td>TF-IDF + Euclidean</td><td>~0.45</td><td>~0.70</td><td>~0.56</td></tr>
+          <tr><td>BM25</td><td>~0.58</td><td>~0.80</td><td>~0.67</td></tr>
+          <tr class="highlight-row"><td>SBERT + Cosine</td><td>~0.72</td><td>~0.91</td><td>~0.80</td></tr>
+          <tr><td>TF-IDF + LR (supervised)</td><td>~0.62</td><td>~0.83</td><td>~0.71</td></tr>
+          <tr class="highlight-row"><td>SBERT + LR (supervised)</td><td>~0.76</td><td>~0.93</td><td>~0.84</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<!-- ═══════════════════════  FOOTER  ═══════════════════════ -->
+<footer class="site-footer">
+  NLP Project — Sentence Selection QA &nbsp;|&nbsp;
+  SQuAD v1.1 &nbsp;|&nbsp; TF-IDF + Cosine Similarity
+</footer>
+
+<script src="{{ url_for('static', filename='main.js') }}"></script>
+</body>
+</html>
