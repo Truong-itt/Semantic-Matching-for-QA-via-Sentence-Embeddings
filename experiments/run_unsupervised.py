@@ -120,7 +120,6 @@ def run_unsupervised_experiments(
     tfidf_enc = build_tfidf_encoder(train_data, val_data)
     # Experiments
     all_results: Dict[str, Dict] = {}
-
     for metric in ("cosine", "euclidean"):
         name     = f"TF-IDF + {metric.capitalize()}"
         selector = UnsupervisedSelector(tfidf_enc, metric=metric)
@@ -132,8 +131,7 @@ def run_unsupervised_experiments(
     # BM25
     print("\nEvaluating: BM25")
     all_results["BM25"] = run_bm25(val_data, top_k_values=K_VALUES)
-    # SBERT (optional – requires sentence-transformers)
-    # if use_sbert:
+    # SBERT sentence-transformers
     try:
         sbert_enc = build_sbert_encoder()
         for metric in ("cosine", "euclidean"):
@@ -145,10 +143,8 @@ def run_unsupervised_experiments(
             all_results[name] = res
     except ImportError:
         print("sentence-transformers not installed – skipping SBERT experiments.")
-    # Print comparison table
     print("\n" + "=" * 80)
     print("UNSUPERVISED EXPERIMENT RESULTS")
-    print("=" * 80)
     display_metrics = [f"Accuracy@{k}" for k in K_VALUES] + ["MRR"]
     print(format_results_table(all_results, metrics=display_metrics))
     # Save results
@@ -180,6 +176,5 @@ def run_unsupervised_experiments(
             tag="tfidf_cosine",
         )
     return all_results
-
 if __name__ == "__main__":
     run_unsupervised_experiments(max_train=5000, max_val=500, use_sbert=False)

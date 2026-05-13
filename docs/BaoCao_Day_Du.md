@@ -1,809 +1,614 @@
 # BÁO CÁO ĐỀ TÀI
 
-## So khớp ngữ nghĩa cho bài toán Question Answering theo hướng chọn câu trả lời (Sentence Selection) bằng Sentence Embedding
+## Semantic Matching for QA via Sentence Embeddings
+### Unsupervised vs Supervised Sentence Selection
 
-**Semantic Matching for Question Answering via Sentence Embeddings: Unsupervised vs. Supervised Sentence Selection**
+> Bài toán sentence-selection question answering trên SQuAD v1.1, được triển khai trong project `sentence_selection_qa`.
 
----
-
-**Học phần:** Xử lý ngôn ngữ tự nhiên (420300138501)
-
-**Người thực hiện:** Hồ Duy Trường
-
-**Giáo viên hướng dẫn:** TS. Bùi Thanh Hùng
-
-**Ngày nộp báo cáo:** Tháng 5 năm 2026
+**Học phần:** Xử lý ngôn ngữ tự nhiên (420300138501)  
+**Người thực hiện:** Hồ Duy Trường  
+**Giáo viên hướng dẫn:** TS. Bùi Thanh Hùng  
+**Thời gian hoàn thành:** Tháng 5 năm 2026
 
 ---
 
-## I. TÓM TẮT
+## 1. Tóm tắt
 
-Đề tài xây dựng một hệ thống sentence selection question answering trên bộ dữ liệu SQuAD v1.1. Thay vì trích xuất span, hệ thống chọn một câu hoàn chỉnh từ đoạn văn có khả năng cao nhất chứa câu trả lời.
+Project này chuyển bài toán QA từ span extraction sang sentence selection: với một câu hỏi và một đoạn văn đã tách câu, hệ thống chọn ra câu có khả năng chứa đáp án cao nhất.
 
-**Phương pháp chính:**
-- Biểu diễn câu qua TF-IDF + SVD, Sentence-BERT, BiLSTM
-- So sánh hai hướng: Unsupervised (dựa similarity) và Supervised (binary classification)
-- Đánh giá qua Accuracy@k, MRR, F1-score + phân tích lỗi định tính
-- Demo web Flask cho phép test real-time
+Hệ thống được xây dựng theo 2 hướng:
 
-**Kết quả nổi bật:**
-- SBERT + RF (Supervised) đạt **75.65% Accuracy@1** trên validation
-- TF-IDF + Cosine (Unsupervised) đạt **72.44% Accuracy@1**
-- Improvement: +3.21% từ unsupervised baseline
-- Accuracy@5 đạt **98.70%** (SBERT + Cosine)
+- **Unsupervised:** so khớp question-sentence bằng cosine hoặc euclidean trên embedding.
+- **Supervised:** biến mỗi cặp (question, sentence) thành vector đặc trưng và huấn luyện bộ phân loại nhị phân.
 
----
+Các thành phần chính trong project:
 
-## II. GIỚI THIỆU VÀ ĐỊNH NGHĨA BÀI TOÁN
+- Tiền xử lý SQuAD v1.1 sang dạng sentence-selection.
+- Encoder: TF-IDF + SVD, SBERT, BM25.
+- Mô hình: unsupervised selector, supervised selector, BiLSTM encoder (đã implement nhưng chưa nối vào runner chính).
+- Đánh giá: Accuracy@k, MRR, precision/recall/F1, biểu đồ và error analysis.
+- Demo web Flask để nhập question/context và nhận câu được chọn.
 
-### 2.1 Bài Toán Sentence Selection QA
+### 1.1 Tính cấp thiết của đề tài
 
-**Định nghĩa:**  
-Cho trước câu hỏi Q và đoạn văn P được tách thành N câu {S₁, S₂, …, Sₙ}, hệ thống chọn ra câu Sᵢ có khả năng cao nhất chứa câu trả lời.
+Trong QA thực tế, một câu hỏi thường không cần một câu trả lời có độ chính xác ký tự tuyệt đối, mà cần một đơn vị thông tin đủ gần và đủ đúng về mặt ngữ nghĩa. Với nhiều hệ thống retrieval, sentence-level selection là một cách cân bằng giữa hiệu năng, độ phức tạp và khả năng giải thích. Nó nhẹ hơn span extraction, nhưng vẫn giữ được khả năng lọc nhiễu rất tốt trong context dài.
 
-**Input:**
-- question: Chuỗi ký tự câu hỏi
-- sentences: Danh sách N câu được tách từ đoạn văn
-- label (training): Chỉ số câu chứa câu trả lời
+Trong bối cảnh project này, sentence selection còn có giá trị như một baseline học thuật: nó cho phép so sánh trực quan giữa lexical matching, dense semantic matching và supervised reranking. Nhờ đó, người đọc có thể thấy rõ mức đóng góp của từng tầng xử lý thay vì chỉ nhìn vào một model cuối cùng.
 
-**Output:**
-- predicted_idx: Chỉ số câu được dự đoán
+### 1.2 Mục tiêu học thuật và kỹ thuật
 
-**Ví dụ:**
-```
-Question: "Ai phát minh ra Python?"
-Sentences:
-  [0] "Guido van Rossum tạo ra ngôn ngữ lập trình Python vào năm 1991."
-  [1] "Python là một ngôn ngữ lập trình bậc cao."
-  [2] "Java được phát triển bởi Sun Microsystems."
-Label: 0 (câu 0 chứa câu trả lời)
-```
+Về học thuật, đề tài nhằm làm rõ ba câu hỏi chính:
 
-### 2.2 Động Lực và Ứng Dụng
+- Khi nào lexical overlap là đủ tốt để chọn câu?
+- Khi nào cần embedding ngữ nghĩa như SBERT để vượt qua giới hạn lexical?
+- Khi nào supervised reranking thực sự tạo thêm giá trị so với similarity thuần túy?
 
-**Lợi thế của Sentence Selection:**
-- Đơn giản hơn span extraction, chi phí annotation thấp
-- Làm bước retrieval/reranking trong QA lớn hơn
-- Dễ mở rộng sang ngôn ngữ khác
-- Phù hợp khi câu trả lời nằm gọn trong một câu
+Về kỹ thuật, project hướng đến một pipeline có thể chạy ổn định trên CPU, có thể mở rộng về sau, và đủ rõ ràng để báo cáo lại bằng số liệu, biểu đồ và error analysis.
 
-**So sánh với span extraction:**
-| Aspect | Span Extraction | Sentence Selection |
-|--------|-----------------|-------------------|
-| Độ phức tạp | Cao (predict start/end) | Thấp (chọn câu) |
-| Annotation | Cần chi tiết (character level) | Dễ hơn (sentence level) |
-| Accuracy hiểu | ~80% (SQuAD) | ~76% (nên dùng kết hợp) |
+### 1.3 Phạm vi và giả định của bài toán
 
-### 2.3 Bộ Dữ Liệu SQuAD v1.1
+Project làm việc với giả định rằng câu trả lời thường nằm gọn trong một câu. Đây là giả định quan trọng vì nó cho phép biến QA thành bài toán xếp hạng câu. Khi giả định này không còn đúng, ví dụ answer span kéo dài qua nhiều câu hoặc context chứa answer phân tán, sentence selection sẽ bắt đầu bộc lộ giới hạn.
 
-**Thông tin chung:**
-- Nguồn: Stanford University, công khai trên HuggingFace
-- Format gốc: Span extraction (question, passage, answer_start, answer_text)
-- Tổng số mẫu: 
-  - Train: 87.599 mẫu
-  - Validation: 10.570 mẫu
-
-**Quá trình chuyển đổi sang Sentence Selection:**
-1. Tách passage thành câu dùng NLTK punkt tokenizer
-2. Tìm câu chứa answer_text (so khớp case-insensitive)
-3. Gán label = index của câu chứa answer
-4. Loại bỏ mẫu không tìm thấy câu chứa answer (~6-7%)
-
-**Thống kê dữ liệu sau chuyển đổi (trên tập train):**
-- Tổng mẫu hợp lệ: ~81.922 mẫu (93%)
-- Số câu trung bình/mẫu: 4-5 câu
-- Độ dài câu trung bình: 15-20 từ
+Giả định này không phải hạn chế riêng của project mà là một thiết kế có chủ đích. Mục tiêu ở đây là xây dựng một hệ QA đơn giản, dễ kiểm soát và dễ so sánh trước khi nghĩ đến các mô hình lớn hơn.
 
 ---
 
-## III. PHƯƠNG PHÁP VÀ KIẾN TRÚC
+## 1. Tổng quan nghiên cứu
 
-### 3.1 Pipeline Tổng Thể
+### 1.1 Sentence selection trong QA cổ điển
 
-```
-┌─ SQuAD v1.1 (HuggingFace) ─────┐
-│   87.6K train + 10.5K val      │
-└────────────────┬────────────────┘
-                 │
-          [PREPROCESSING]
-    - Tokenize câu (NLTK punkt)
-    - Locate answer sentence
-    - Save as JSON
-                 │
-    ┌────────────┴────────────┐
-    │                         │
- [UNSUPERVISED]          [SUPERVISED]
- ├ TF-IDF + Cosine       ├ Build features
- ├ TF-IDF + Euclidean    ├ Train LR/RF/XGB
- ├ BM25                  ├ Predict
- ├ SBERT + Cosine        ├ Evaluate
- └ SBERT + Euclidean     └ Save models
-    │                         │
-    └────────────┬────────────┘
-                 │
-       [EVALUATION & ANALYSIS]
-    - Compute Acc@k, MRR, F1
-    - Generate plots
-    - Error analysis
-                 │
-           [DEMO WEB]
-         Flask @ localhost:5000
-```
+Trước khi transformer trở nên phổ biến, nhiều hệ QA đi theo hướng pipeline: truy xuất tài liệu liên quan, chọn đoạn văn, rồi chọn câu hoặc span trong đoạn đó. Sentence selection xuất hiện như một lớp trung gian có tác dụng giảm không gian tìm kiếm. Trong nhiều hệ thống, bước này có thể được xem như document reranking ở mức vi mô.
 
-### 3.2 Thành Phần Chi Tiết
+Khi chỉ cần chọn đúng câu chứa thông tin trả lời, độ phức tạp của vấn đề giảm đáng kể. Điều này đặc biệt hữu ích trong các tình huống context dài, nơi việc xử lý tất cả token bằng một mô hình span extractor là tốn kém và dễ bị nhiễu.
 
-#### 3.2.1 Tiền Xử Lý Dữ Liệu
+### 1.2 Lexical matching và sparse retrieval
 
-**Tokenization (`preprocessing/sentence_tokenizer.py`):**
-- **Phương pháp NLTK:** Sử dụng pre-trained punkt tokenizer
-- **Fallback regex:** Pattern `(?<=[.!?])\s+(?=[A-Z])` khi NLTK unavailable
-- **Hàm chính:**
-  ```python
-  tokenize_sentences(text: str, method='nltk') -> List[str]
-  find_answer_sentence_idx(sentences: List[str], answer_text: str) -> int
-  ```
+Các phương pháp lexical matching như TF-IDF, cosine similarity hoặc BM25 dựa trên giả định rằng những từ trùng nhau là tín hiệu mạnh cho sự liên quan. Trong QA, giả định này thường đúng ở mức nào đó vì câu hỏi và câu chứa đáp án thường có ít nhất một số từ khóa tương đồng.
 
-**Chuyển đổi Dataset (`preprocessing/convert_dataset.py`):**
-- Load từ HuggingFace: `datasets.load_dataset("squad")`
-- Duyệt từng mẫu, tách context, tìm câu chứa answer
-- Output format JSON:
-  ```json
-  {
-    "id": "5733...",
-    "question": "When was...",
-    "sentences": ["Sent1", "Sent2", ...],
-    "label": 1
-  }
-  ```
-- Lưu: `data/processed/{train,val}.json`
+TF-IDF cung cấp một baseline rất tốt vì nó đơn giản, dễ triển khai và có thể hoạt động ổn ngay cả khi không có GPU. BM25 lại cải tiến TF-IDF bằng cách tính đến độ dài câu và độ bão hòa tf, nên thường mạnh hơn trong retrieval thực tế. Tuy vậy, cả hai đều phụ thuộc nhiều vào lexical overlap và dễ bị hạn chế khi câu đúng diễn đạt khác câu hỏi.
 
-#### 3.2.2 Biểu Diễn Câu (Embeddings)
+### 1.3 Dense embeddings và semantic matching
 
-**1. TF-IDF + Truncated SVD** (`embeddings/pretrained_encoder.py`)
+Sự phát triển của sentence embedding, đặc biệt là SBERT, đã thay đổi cách so khớp văn bản. Thay vì chỉ đếm từ xuất hiện, dense embedding cố gắng mã hóa ngữ nghĩa của cả câu vào một vector có cấu trúc tốt hơn cho similarity. Điều này giúp mô hình xử lý tốt các trường hợp paraphrase và diễn đạt lại.
 
-```python
-class TFIDFEncoder:
-    def __init__(self, n_components=256, max_features=50_000, ngram_range=(1,2))
-    def fit(texts: List[str])
-    def encode(texts: List[str]) -> np.ndarray  # (N, 256)
-```
+Trong bài toán sentence selection, dense embedding có lợi rõ rệt khi câu hỏi và câu trả lời không chia sẻ nhiều token nhưng vẫn mang quan hệ ngữ nghĩa mạnh. Đây chính là lý do SBERT thường vượt TF-IDF trong các benchmark ngắn và vừa.
 
-- **Quy trình:**
-  1. TF-IDF vectorization (sparse)
-  2. Truncated SVD giảm chiều từ sparse → 256-dim dense
-  3. L2 normalization
-- **Tham số:**
-  - n_components: 256 (trade-off tốc độ/chất lượng)
-  - max_features: 50.000
-  - ngram_range: (1, 2) – unigram + bigram
-- **Ưu điểm:** Nhanh (~100ms/100 sentences), không cần GPU
-- **Nhược điểm:** Không capture semantic sâu, phụ thuộc từ vựng trùng khớp
+### 1.4 Supervised reranking
 
-**2. Sentence-BERT (SBERT)** (`embeddings/pretrained_encoder.py`)
+Nếu dense embedding là cách nâng cấp biểu diễn, thì supervised reranking là cách nâng cấp quyết định. Thay vì chỉ dựa vào một metric cố định, mô hình được học trực tiếp từ nhãn câu đúng. Điều này cho phép classifier học ra boundary phù hợp hơn với dữ liệu.
 
-```python
-class SBERTEncoder:
-    def __init__(self, model_name="all-MiniLM-L6-v2", batch_size=64, device='auto')
-    def encode(texts: List[str], show_progress=False) -> np.ndarray  # (N, 384)
-```
+Trong nhiều hệ retrieval hiện đại, reranking là một chiến lược rất quan trọng: bước đầu dùng retrieval nhanh để lấy top-k, sau đó một model mạnh hơn xếp hạng lại. Project này không triển khai full pipeline hai tầng, nhưng tinh thần supervised selector vẫn gần với reranking, vì nó học cách phân biệt positive và negative pairs trong cùng context.
 
-- **Model:** `all-MiniLM-L6-v2` (6 layers, 384-dim, 33M params)
-- **Phương pháp:** BERT encoding + mean pooling + L2 norm
-- **Ưu điểm:** Capture semantic sâu, robust paraphrase, pre-trained trên 1B sentence pairs
-- **Nhược điểm:** Chậm hơn (~1-2 seconds/100 sentences), cần `sentence-transformers`
-- **Dimension:** 384-dim (vs 256 của TF-IDF)
+### 1.5 Vị trí của project trong dòng nghiên cứu
 
-**3. BiLSTM Encoder** (`embeddings/bilstm_encoder.py`) - *Implemented nhưng chưa integrate*
+Project này không nhằm vượt qua các mô hình SOTA, mà nhằm xây dựng một baseline có cấu trúc tốt và giải thích rõ ràng. Nó nằm ở giao điểm của ba hướng:
 
-```python
-class BiLSTMEncoder(nn.Module):
-    def __init__(self, vocab_size, embed_dim=100, hidden_dim=128, 
-                 output_dim=256, num_layers=2, pooling='max')
-    def forward(input_ids, lengths) -> torch.Tensor  # (B, 256)
-```
+- retrieval cổ điển.
+- sentence embedding.
+- supervised pair classification.
 
-- **Kiến trúc:** Embedding → 2-layer BiLSTM (bidirectional) → Pooling → Linear → Tanh
-- **Pooling options:** max / mean / last
-- **Yêu cầu:** `torch` library
-- **Ghi chú:** Chưa được cắm vào main pipeline runners
-
-**4. BM25** (`embeddings/pretrained_encoder.py`) - *Sparse retrieval baseline*
-
-```python
-class BM25Encoder:
-    def fit(sentences: List[str])
-    def get_scores(query: str) -> np.ndarray
-```
-
-- **Thuật toán:** Okapi BM25 (TF-IDF variant, probability ranking)
-- **Đặc điểm:** Sparse, không neural, tuning-friendly (k1, b params)
-- **Yêu cầu:** `pip install rank_bm25`
-
-#### 3.2.3 Mô Hình Không Giám Sát
-
-**Class `UnsupervisedSelector` (`models/unsupervised.py`):**
-
-```python
-class UnsupervisedSelector:
-    def __init__(self, encoder, metric='cosine')
-    
-    def score(question, sentences) -> np.ndarray  # (N,)
-    def predict(question, sentences) -> int
-    def predict_topk(question, sentences, k=3) -> List[int]
-    def evaluate(samples, top_k_values=(1,3,5)) -> Dict[str, float]
-```
-
-**Similarity Metrics:**
-- **Cosine:** `sim(q,s) = (q·s) / (||q|| ||s||)` – invariant magnitude, scale [−1, 1]
-- **Euclidean:** `dist(q,s) = √Σ(q_i−s_i)²` – negated để consistent: higher = better
-
-**Inference Flow:**
-1. Encode question → q_vec (D,)
-2. Encode sentences → s_vecs (N, D)
-3. Compute similarity/distance → scores (N,)
-4. argmax(scores) → predicted index
-
-#### 3.2.4 Mô Hình Có Giám Sát
-
-**Feature Engineering (`models/supervised.py`):**
-
-```python
-def build_pair_feature(q_vec: np.ndarray, s_vec: np.ndarray) -> np.ndarray:
-    """
-    Output: [cosine_sim (1), elem_prod (D), abs_diff (D), concat (2D)]
-    Total: 1 + 3D features
-    """
-```
-
-**Feature Chi Tiết:**
-| Feature | Dimension | Ý nghĩa |
-|---------|-----------|---------|
-| Cosine similarity | 1 | Độ tương đồng góc |
-| Element-wise product | D | Tương tác biến thành biến |
-| Absolute difference | D | Khoảng cách từng chiều |
-| Concatenation [q;s] | 2D | Biểu diễn ghép |
-
-**Dataset Construction (`build_dataset`):**
-- Duyệt từng training sample
-- Positive pair: (Q, S_gold) → label=1
-- Negative pairs: Chọn `neg_per_pos` câu sai ngẫu nhiên → label=0
-- Tỷ lệ class mất cân bằng (tuỳ chỉnh bởi neg_per_pos)
-
-**Classifiers:**
-
-| Model | Implementation | Tham số Mặc Định |
-|-------|-----------------|------------------|
-| Logistic Regression | sklearn.linear_model | max_iter=1000, C=1.0, solver='lbfgs' |
-| Random Forest | sklearn.ensemble | n_estimators=200, max_depth=10 |
-| XGBoost | xgboost.XGBClassifier | n_estimators=300, max_depth=6, lr=0.1 |
-
-**Inference:**
-1. Encode question + sentences
-2. Build feature cho từng cặp (Q, Si)
-3. predict_proba() → P(positive)
-4. argmax → select sentence
-
-#### 3.2.5 Đánh Giá (Evaluation)
-
-**Metrics (`evaluation/metrics.py`):**
-
-| Metric | Formula | Range | Ý Nghĩa |
-|--------|---------|-------|---------|
-| **Accuracy@k** | #{S_gold ∈ top-k} / N | [0,1] | % mẫu đúng trong top-k |
-| **MRR** | Σ(1/rank_gold) / N | [0,1] | Mean reciprocal rank |
-| **Precision** | TP / (TP+FP) | [0,1] | Trong 1-of-N = Accuracy |
-| **Recall** | TP / (TP+FN) | [0,1] | Trong 1-of-N = Accuracy |
-| **F1-score** | 2PR/(P+R) | [0,1] | Harmonic mean (= Acc trong 1-of-N) |
-
-**Phân Tích Lỗi (`evaluation/error_analysis.py`):**
-
-| Loại Lỗi | Nguyên Nhân | Tỷ Lệ |
-|----------|-----------|--------|
-| **Lexical Overlap Bias** | Câu sai có từ vựng trùng Q hơn câu đúng | ~32% errors |
-| **Paraphrase Difficulty** | Câu gold dùng từ khác Q (rephrase) | ~24% errors |
-| **Long Context** | Paragraph có nhiều câu (>8) → noise | ~28% errors |
-| **Short Sentence** | Câu gold ngắn (<5 từ) | ~15% errors |
+Nhờ vậy, project có thể được dùng như một bài thực hành học thuật đầy đủ, đồng thời là nền tảng cho các nghiên cứu sâu hơn sau này.
 
 ---
 
-## IV. KẾT QUẢ THỰC NGHIỆM
+## 2. Bài toán và dữ liệu
 
-### 4.1 Setup
+### 2.1 Định nghĩa bài toán
 
-**Môi trường:**
-- Python: 3.10+
-- OS: Windows 11
-- GPU: CPU (experiments chạy trên CPU, không bắt buộc GPU)
+Cho câu hỏi `Q` và đoạn văn `P` được tách thành `N` câu `{S1, S2, ..., SN}`, mục tiêu là chọn chỉ số câu `Si` có xác suất chứa câu trả lời cao nhất.
 
-**Packages Cài Đặt:**
+**Input**
+
+- `question`: câu hỏi tự nhiên.
+- `sentences`: danh sách câu trong context.
+- `label`: chỉ số câu chứa answer span trong dữ liệu huấn luyện/đánh giá.
+
+**Output**
+
+- `predicted_idx`: chỉ số câu được dự đoán.
+
+### 2.2 Bộ dữ liệu
+
+Project dùng **SQuAD v1.1** từ HuggingFace `datasets`:
+
+```python
+from datasets import load_dataset
+dataset = load_dataset("squad")
 ```
-datasets, nltk, scikit-learn, numpy, matplotlib
-sentence-transformers (SBERT)
-xgboost (XGB)
-rank_bm25 (BM25)
-torch (BiLSTM – optional)
-flask (web demo)
+
+Quá trình chuyển đổi sang dạng sentence-selection được thực hiện trong `preprocessing/convert_dataset.py`:
+
+1. Tách passage thành câu bằng tokenizer.
+2. Tìm câu đầu tiên chứa `answer_text` theo so khớp không phân biệt hoa/thường.
+3. Gán `label` là index của câu đó.
+4. Loại bỏ mẫu không tìm thấy câu chứa đáp án.
+
+**Kích thước processed data hiện có trong repo:**
+
+- `data/processed/train.json`: 4,972 mẫu
+- `data/processed/val.json`: 998 mẫu
+
+Mỗi sample có cấu trúc:
+
+```json
+{
+  "id": "...",
+  "question": "...",
+  "sentences": ["...", "..."],
+  "label": 1
+}
 ```
 
-**Dữ Liệu Thực Nghiệm:**
-- Train split: 5.000 mẫu (từ 81.922 sau conversion)
-- Validation split: 1.020 mẫu (từ 10.570)
-- Độ dài context: 4-5 câu trung bình
-- Mẫu bị loại (no answer found): ~7% gốc
+### 2.3 Sentence tokenizer
 
-### 4.2 Kết Quả Unsupervised
+Tokenizer nằm trong `preprocessing/sentence_tokenizer.py`:
 
-**Các hệ thống được test:**
-1. TF-IDF + Cosine
-2. TF-IDF + Euclidean  
-3. BM25
-4. SBERT + Cosine
-5. SBERT + Euclidean
+- Ưu tiên `nltk.sent_tokenize` với `punkt`.
+- Có fallback regex khi NLTK không khả dụng.
+- Hàm `find_answer_sentence_idx()` trả về sentence index đầu tiên chứa đáp án.
 
-**Bảng Kết Quả:**
+---
+
+## 3. Kiến trúc project
+
+### 3.1 Luồng chạy chính
+
+`main.py` là entry point thống nhất cho toàn bộ pipeline. Các mode hiện có:
+
+- `full`: preprocess -> unsupervised -> supervised -> compare.
+- `preprocess`: tạo `data/processed/train.json` và `val.json`.
+- `unsupervised`: chạy các baseline không giám sát.
+- `supervised`: huấn luyện các classifier có giám sát.
+- `compare`: gộp kết quả từ JSON đã lưu và xuất bảng/biểu đồ tổng hợp.
+- `demo`: chạy demo CLI cho một cặp question/context.
+
+### 3.2 Các thư mục chính
+
+| Thành phần | Vai trò |
+|---|---|
+| `preprocessing/` | Tách câu và chuyển SQuAD sang sentence-selection |
+| `embeddings/` | TF-IDF encoder, SBERT encoder, BM25 encoder, BiLSTM encoder |
+| `models/` | Unsupervised selector và supervised selector |
+| `evaluation/` | Metrics, bảng kết quả, plotting, error analysis |
+| `experiments/` | Runner cho unsupervised và supervised experiments |
+| `webapp/` | Flask demo |
+| `results/` | CSV, JSON, plots, error reports |
+| `saved_models/` | Model pickle của supervised experiments |
+
+---
+
+## 4. Phương pháp
+
+### 4.1 Encoder
+
+#### TF-IDF + Truncated SVD
+
+Encoder này là baseline nhẹ, dùng cho cả unsupervised và supervised:
+
+- `TfidfVectorizer(max_features=50_000, ngram_range=(1, 2), sublinear_tf=True)`
+- `TruncatedSVD(n_components=256)`
+- `Normalizer(copy=False)`
+
+Ưu điểm: nhanh, dễ chạy trên CPU, ít phụ thuộc.
+
+Nhược điểm: phụ thuộc lexical overlap, khó bắt paraphrase sâu.
+
+#### Sentence-BERT
+
+- Model: `all-MiniLM-L6-v2`
+- Output dimension: 384
+- Encoding đã được chuẩn hoá L2
+
+Ưu điểm: biểu diễn ngữ nghĩa tốt hơn, đặc biệt với paraphrase.
+
+#### So sánh TF-IDF và SBERT
+
+Hai encoder này đại diện cho hai cách tiếp cận rất khác nhau.
+
+TF-IDF xem văn bản như một tập từ có trọng số. Nó rất hiệu quả khi vấn đề chính là nhận diện từ khóa. Ngược lại, SBERT xem câu như một đơn vị ngữ nghĩa tương đối hoàn chỉnh và cố gắng đưa các câu gần nghĩa vào gần nhau trong không gian vector.
+
+Trong sentence selection, TF-IDF thường tốt khi câu gold chứa từ khóa trùng với question. SBERT mạnh hơn khi câu gold được paraphrase hoặc khi những từ khóa quan trọng không xuất hiện nguyên dạng trong câu hỏi.
+
+#### Vai trò của SVD trong TF-IDF
+
+SVD giúp biến vector sparse chiều lớn thành dense vector kích thước cố định. Điều này có hai tác dụng:
+
+1. Giảm chiều để tăng tốc tính similarity.
+2. Làm cho biểu diễn dễ dùng hơn với classifier có giám sát.
+
+Tuy nhiên, SVD không biến TF-IDF thành semantic encoder theo đúng nghĩa. Nó chỉ nén thông tin lexical theo không gian thấp chiều hơn. Vì vậy, dù tiện lợi, TF-IDF + SVD vẫn là một baseline thống kê chứ không phải model hiểu ngữ nghĩa sâu.
+
+#### BM25
+
+- Dùng `rank_bm25.BM25Okapi`.
+- Là baseline retrieval sparse, không neural.
+
+#### BiLSTM Encoder
+
+`embeddings/bilstm_encoder.py` đã được implement như một encoder tái sử dụng, nhưng hiện chưa được nối vào các experiment runner chính.
+
+### 4.2 Unsupervised selector
+
+`models/unsupervised.py` sử dụng vector similarity để chọn câu.
+
+- `cosine`: điểm càng cao càng tốt.
+- `euclidean`: khoảng cách được negate để API đồng nhất là “cao hơn = tốt hơn”.
+
+#### Công thức trực giác
+
+Với cosine similarity, hai vector càng cùng hướng thì score càng cao:
+
+$$
+cos(q, s) = (q \cdot s) / (||q|| ||s||)
+$$
+
+Với euclidean distance, hai vector càng gần nhau thì distance càng nhỏ. Trong project, distance được đổi dấu để thành score:
+
+$$
+score(q, s) = -||q - s||_2
+$$
+
+Điều này giúp selector luôn dùng cùng một quy ước: score lớn hơn nghĩa là câu tốt hơn.
+
+Quy trình:
+
+1. Encode `question` và toàn bộ `sentences`.
+2. Tính score cho từng câu.
+3. `argmax(score)` trả về index câu được chọn.
+
+### 4.3 Supervised selector
+
+`models/supervised.py` biến bài toán thành phân loại nhị phân trên cặp `(question, sentence)`.
+
+#### Feature vector
+
+Với mỗi cặp `(q, s)`:
+
+- cosine similarity: 1 chiều
+- element-wise product: `D` chiều
+- absolute difference: `D` chiều
+- concatenation `[q; s]`: `2D` chiều
+
+Tổng kích thước: `1 + 3D`.
+
+#### Vì sao chọn các feature này
+
+Các feature này được chọn vì chúng bổ sung lẫn nhau:
+
+- cosine similarity nắm bắt mức độ gần nhau tổng quát.
+- element-wise product làm nổi bật các chiều mà question và sentence cùng kích hoạt.
+- absolute difference cho biết mức lệch theo từng chiều.
+- concatenation giữ nguyên thông tin riêng của từng vector để classifier tự học tương tác.
+
+Nếu chỉ dùng cosine, mô hình supervised sẽ không khác nhiều so với unsupervised. Việc thêm product, diff và concat làm không gian đặc trưng giàu hơn, cho phép classifier học các pattern tinh vi hơn.
+
+#### Cách xây dựng negative samples
+
+Negative samples được lấy ngẫu nhiên từ các câu còn lại trong cùng context. Cách này có hai ưu điểm:
+
+1. Negative đủ khó vì chúng đến từ cùng passage nên thường cùng chủ đề.
+2. Mô hình buộc phải phân biệt câu đúng với câu “gần đúng”, thay vì chỉ học tín hiệu quá dễ.
+
+Điểm cần lưu ý là negative sampling ngẫu nhiên có thể làm kết quả dao động nhẹ giữa các lần chạy. Tuy nhiên với cấu hình hiện tại và random seed cố định, kết quả vẫn đủ ổn định để so sánh.
+
+#### Classifiers
+
+| Model | Cấu hình mặc định |
+|---|---|
+| Logistic Regression | `max_iter=1000`, `C=1.0`, `solver='lbfgs'` |
+| Random Forest | `n_estimators=200`, `max_depth=10`, `random_state=42` |
+| XGBoost | `n_estimators=300`, `max_depth=6`, `learning_rate=0.1` |
+
+
+### 4.4 Evaluation
+
+`evaluation/metrics.py` đóng vai trò tính toán và chuẩn hóa toàn bộ thước đo. Điểm quan trọng nhất là cách đánh giá được thiết kế thống nhất cho cả unsupervised và supervised, nên các runner khác nhau có thể dùng chung một pipeline kiểm tra mà không cần viết lại logic đo lường.
+
+Các metric chính gồm:
+
+- Accuracy@k: đo tỷ lệ mẫu có câu gold nằm trong top-k dự đoán.
+- Recall@k: trong bài toán 1-of-N này, bằng với Accuracy@k.
+- MRR: mean reciprocal rank, phản ánh vị trí xếp hạng của câu đúng.
+- Precision / Recall / F1: trong thiết lập top-1, các giá trị này trùng với accuracy.
+
+Ngoài các thước đo số học, project còn sinh các biểu đồ trực quan để hỗ trợ phân tích:
+
+- Accuracy@k comparison.
+- MRR comparison.
+- Confusion/rank distribution.
+
+Các biểu đồ này giúp người đọc không chỉ biết model nào tốt hơn mà còn thấy được mức độ cải thiện ở các ngưỡng top-k.
+
+### 4.5 Ý nghĩa của MRR trong bài toán này
+
+MRR đặc biệt hữu ích khi ta muốn biết câu đúng thường đứng ở vị trí nào. Hai hệ thống có thể cùng Accuracy@1 nhưng MRR khác nhau nếu một hệ thường xếp câu đúng ở vị trí 2-3 trong những trường hợp sai.
+
+Trong sentence selection, điều này quan trọng vì đôi khi top-1 sai nhưng top-3 vẫn chứa câu đúng. Khi đó, một downstream reranker hoặc answer extractor vẫn có thể tận dụng top-k candidate.
+
+### 4.6 Vì sao top-5 gần như rất cao
+
+Khi context chỉ có vài câu, việc câu đúng có mặt trong top-5 trở nên khá dễ. Do đó, Accuracy@5 thường tiến gần 1.0. Điều này không có nghĩa mô hình đã giải quyết hoàn toàn bài toán, mà chỉ cho thấy candidate generation ở mức câu đã khá tốt.
+
+Nói cách khác, thách thức thực sự nằm ở top-1, nơi mô hình phải sắp xếp chính xác nhất giữa những câu rất gần nhau về mặt ngữ nghĩa.
+
+---
+
+## 5. Kết quả thực nghiệm
+
+### 5.1 Thiết lập thực nghiệm
+
+Các run hiện tại được thực hiện trên môi trường Windows, Python 3.10, chạy CPU. Đây là thiết lập đủ để kiểm tra các baseline của project mà không cần hạ tầng GPU chuyên dụng.
+
+Tham số dữ liệu hiện dùng trong run:
+
+- Train: 4.972 mẫu.
+- Validation: 998 mẫu.
+
+Mặc dù kích thước dữ liệu này nhỏ hơn bộ SQuAD gốc, nó đã đủ để làm các so sánh tương đối giữa encoder và classifier, đồng thời giúp quá trình chạy nhanh hơn và thuận tiện hơn khi demo.
+
+### 5.2 Kết quả unsupervised
+
+Kết quả được lưu trong `results/tables/unsupervised_results.json`.
 
 | System | Acc@1 | Acc@3 | Acc@5 | MRR | F1 |
-|--------|-------|-------|-------|-----|-----|
-| TF-IDF + Cosine | **0.7244** | 0.9439 | 0.9850 | 0.8338 | 0.7244 |
+|---|---:|---:|---:|---:|---:|
+| TF-IDF + Cosine | 0.7244 | 0.9439 | 0.9850 | 0.8338 | 0.7244 |
 | TF-IDF + Euclidean | 0.7244 | 0.9439 | 0.9850 | 0.8338 | 0.7244 |
 | BM25 | 0.7214 | 0.9539 | 0.9850 | 0.8393 | 0.7214 |
-| **SBERT + Cosine** | **0.7615** | **0.9599** | **0.9870** | **0.8594** | **0.7615** |
+| SBERT + Cosine | 0.7615 | 0.9599 | 0.9870 | 0.8594 | 0.7615 |
 | SBERT + Euclidean | 0.7615 | 0.9599 | 0.9870 | 0.8594 | 0.7615 |
 
-**Nhận xét Chính:**
-- **SBERT vượt trội:** +3.71% Acc@1 so với TF-IDF baseline
-- **Cosine ≈ Euclidean:** Khác nhau minimal trên tập này
-- **BM25 cạnh tranh TF-IDF:** Sparse baseline vẫn mạnh
-- **Acc@5 rất cao:** 98%+ (hệ thống chọn đúng trong top 5)
-- **MRR ~0.84:** Câu gold rank trung bình ~1.2
+Phân tích kết quả:
 
-**Visualization:** Plots được save tại `results/plots/unsupervised_*.png`
+- SBERT + Cosine đạt Accuracy@1 cao nhất trong nhóm unsupervised.
+- TF-IDF + Cosine là baseline mạnh, đặc biệt xét theo chi phí tính toán.
+- BM25 có MRR tốt, phản ánh năng lực retrieval sparse đáng kể.
+- Cosine và Euclidean gần như tương đương vì vector đã được normalize tốt.
 
-### 4.3 Kết Quả Supervised
+### 5.3 Kết quả supervised
 
-**Các hệ thống được test:**
-1. TF-IDF + Logistic Regression
-2. TF-IDF + Random Forest
-3. TF-IDF + XGBoost
-4. SBERT + Logistic Regression
-5. SBERT + Random Forest
-6. Ablation: TF-IDF + LR với neg_per_pos ∈ {1, 3, 5}
-
-**Bảng Kết Quả:**
+Kết quả được lưu trong `results/tables/supervised_results.json`.
 
 | System | Acc@1 | Acc@3 | Acc@5 | MRR | F1 |
-|--------|-------|-------|-------|-----|-----|
+|---|---:|---:|---:|---:|---:|
 | TF-IDF + LR | 0.6964 | 0.9259 | 0.9760 | 0.8116 | 0.6964 |
 | TF-IDF + RF | 0.7335 | 0.9369 | 0.9850 | 0.8356 | 0.7335 |
 | TF-IDF + XGB | 0.7194 | 0.9489 | 0.9870 | 0.8337 | 0.7194 |
 | SBERT + LR | 0.7555 | 0.9599 | 0.9830 | 0.8550 | 0.7555 |
-| **SBERT + RF** | **0.7565** | 0.9539 | **0.9890** | **0.8568** | **0.7565** |
+| SBERT + RF | 0.7565 | 0.9539 | 0.9890 | 0.8568 | 0.7565 |
 | TF-IDF + Cosine (Unsup) | 0.7244 | 0.9439 | 0.9850 | 0.8338 | 0.7244 |
 
-**Ablation Study (TF-IDF + LR):**
+### 5.4 Ablation theo neg_per_pos
 
 | neg_per_pos | Acc@1 | Acc@3 | Acc@5 | MRR |
-|-------------|-------|-------|-------|-----|
+|---|---:|---:|---:|---:|
 | 1 | 0.7034 | 0.9319 | 0.9770 | 0.8154 |
-| **3** | **0.6964** | **0.9259** | **0.9760** | **0.8116** |
+| 3 | 0.6964 | 0.9259 | 0.9760 | 0.8116 |
 | 5 | 0.6954 | 0.9309 | 0.9780 | 0.8105 |
 
-**Nhận xét:**
-- **SBERT + RF best:** 75.65% Acc@1, tối ưu nhất
-- **Supervised > Unsupervised:** SBERT + RF vượt SBERT + Cosine +0.5%
-- **RF > LR > XGB:** Trên TF-IDF, RF tốt nhất
-- **Ablation:** neg_per_pos=1 hay 3-5 khác nhau tối thiểu (~0.8%)
-- **Generalization:** Acc@5 ~98.9% (model rất tốt)
+### 5.5 Bàn luận thực nghiệm
 
-### 4.4 So Sánh Tổng Thể
+Các kết quả trên đưa ra vài nhận xét quan trọng:
 
-**Top 5 mô hình:**
-1. **SBERT + RF (Supervised)** – 75.65% Acc@1 ⭐ BEST
-2. SBERT + LR (Supervised) – 75.55% Acc@1
-3. SBERT + Cosine (Unsupervised) – 76.15% Acc@1 (thực chạy lúc này, nhưng trên test set)
-4. TF-IDF + RF (Supervised) – 73.35% Acc@1
-5. TF-IDF + Cosine (Unsupervised) – 72.44% Acc@1
+1. SBERT là encoder mạnh nhất trong toàn bộ các mô hình hiện tại. Khi embedding ngữ nghĩa tốt hơn, cả unsupervised lẫn supervised đều hưởng lợi.
+2. Random Forest tỏ ra phù hợp với feature pairwise do project xây dựng. Nó bắt được quan hệ phi tuyến tốt hơn logistic regression trong nhiều trường hợp.
+3. XGBoost có hiệu năng cạnh tranh nhưng chưa vượt RF ở Acc@1 trong run hiện tại.
+4. Việc tăng số negative mỗi positive không cải thiện mạnh kết quả, điều đó cho thấy bài toán không chỉ phụ thuộc vào class balance mà còn phụ thuộc lớn vào chất lượng biểu diễn.
 
-**Improvement chính:**
-- Supervised > Unsupervised: +2-3% (phụ thuộc encoder)
-- SBERT > TF-IDF: +3-4%
-- Combined (SBERT + Supervised): +4% so với TF-IDF Unsupervised baseline
+### 5.6 Kết luận ngắn từ kết quả
 
-### 4.5 Phân Tích Lỗi
-
-**Trên SBERT + RF model (~1020 test samples):**
-
-**Thống kê lỗi:**
-- Total errors: ~247 (24.3% error rate)
-- Correct: ~773 (75.7%)
-
-**Breakdown lỗi theo loại:**
-
-| Loại Lỗi | Số Lượng | % | Ví Dụ |
-|----------|---------|-----|-------|
-| **Lexical Overlap Bias** | ~79 | 32% | Model chọn câu có từ vựng trùng Q hơn |
-| **Paraphrase/Semantic Gap** | ~59 | 24% | Câu gold dùng từ khác (rephrase Q) |
-| **Long Context (>8 sent)** | ~69 | 28% | Paragraph dài → nhiều từ distractors |
-| **Other** | ~40 | 16% | Rare cases |
-
-**Ví dụ Lỗi Cụ Thể:**
-
-*Lỗi 1: Lexical Overlap Bias*
-```
-Q: "Who founded Microsoft?"
-Sentences:
-  [0] ✓ "Microsoft was founded by Bill Gates and Paul Allen in 1975."
-  [1] "Bill Gates is known for his philanthropy through the Gates Foundation."
-  
-Model pred: [1] ❌ (vì "Gates Foundation" có từ trùng)
-Gold:       [0] ✓
-```
-
-*Lỗi 2: Paraphrase/Semantic Gap*
-```
-Q: "When was the first computer invented?"
-Sentences:
-  [0] ✓ "The Electronic Numerical Integrator and Computer (ENIAC) was developed in 1946."
-  [1] "ENIAC is considered the first general-purpose electronic computer."
-  
-Model pred: [1] ❌ (vì "first computer" khác "developed in 1946")
-Gold:       [0] ✓
-```
+Nếu xét chung toàn bộ hệ thống, mô hình có Accuracy@1 cao nhất là SBERT + Cosine. Nếu xét riêng nhóm supervised, SBERT + RF là tốt nhất. Nếu xét yếu tố chi phí, TF-IDF + Cosine vẫn là lựa chọn rất thực dụng.
 
 ---
 
-## V. TRIỂN KHAI HỆ THỐNG
+## 6. Demo web
 
-### 5.1 Cấu Trúc Project
+### 6.1 Triển khai
 
-```
-d:\2026\natural_language_processing\sentence_selection_qa\
-├── data/
-│   ├── raw/
-│   └── processed/
-│       ├── train.json          (5K samples)
-│       └── val.json            (1K samples)
-├── preprocessing/
-│   ├── __init__.py
-│   ├── sentence_tokenizer.py   (NLTK tokenization)
-│   └── convert_dataset.py      (SQuAD → sentence-selection)
-├── embeddings/
-│   ├── __init__.py
-│   ├── pretrained_encoder.py   (TF-IDF, SBERT, BM25)
-│   └── bilstm_encoder.py       (BiLSTM – unintegrated)
-├── models/
-│   ├── __init__.py
-│   ├── unsupervised.py         (Similarity-based)
-│   └── supervised.py           (Binary classification)
-├── evaluation/
-│   ├── __init__.py
-│   ├── metrics.py              (Acc@k, MRR, F1, plots)
-│   └── error_analysis.py       (Qualitative analysis)
-├── experiments/
-│   ├── __init__.py
-│   ├── run_unsupervised.py     (Unsupervised pipeline)
-│   └── run_supervised.py       (Supervised pipeline)
-├── results/
-│   ├── tables/
-│   │   ├── unsupervised_results.json
-│   │   ├── supervised_results.json
-│   │   └── all_results.csv
-│   ├── plots/
-│   │   ├── unsupervised_acc_at_k.png
-│   │   ├── supervised_acc_at_k.png
-│   │   ├── all_mrr.png
-│   │   └── ablation_neg_ratio.png
-│   └── error_analysis/
-│       └── tfidf_lr_error_report.json
-├── saved_models/
-│   ├── tfidf_lr.pkl
-│   ├── tfidf_rf.pkl
-│   ├── tfidf_xgb.pkl
-│   ├── sbert_lr.pkl
-│   └── sbert_rf.pkl
-├── webapp/
-│   ├── app.py
-│   ├── templates/
-│   │   └── index.html
-│   └── static/
-│       ├── main.js
-│       └── style.css
-├── main.py                     (Unified CLI entry)
-├── run_webapp.py               (Flask launcher)
-└── docs/
-    ├── BaoCao_.docx            (Template)
-    └── BAOCAO_sentence_selection_qa.md
+Demo web của project được chạy qua `run_webapp.py`.
+
+```bash
+python run_webapp.py
 ```
 
-### 5.2 Cách Sử Dụng CLI
+Sau khi khởi động, ứng dụng mở tại `http://127.0.0.1:5000`.
 
-**Cài Dependencies:**
+### 6.2 Chức năng hiện có
+
+Web app hiện cung cấp các chức năng sau:
+
+- Giao diện nhập question và context.
+- Dự đoán sentence được chọn bằng metric cosine hoặc euclidean.
+- So sánh cosine và euclidean trong cùng một request.
+- Hiển thị danh sách ví dụ mẫu để kiểm thử nhanh.
+
+### 6.3 Cách hoạt động của backend
+
+Trong `webapp/app.py`, encoder TF-IDF được fit theo kiểu lazy load. Nghĩa là encoder chỉ được khởi tạo khi có request đầu tiên hoặc khi server start, thay vì phải fit trong quá trình build ứng dụng.
+
+Nguồn dữ liệu fit encoder gồm:
+
+- Các ví dụ hard-coded trong ứng dụng.
+- Một phần dữ liệu validation nếu `data/processed/val.json` tồn tại.
+
+Sau khi encoder sẵn sàng, app dùng `UnsupervisedSelector` để chấm điểm từng câu trong context. Kết quả trả về có cả raw score lẫn normalized score để frontend dễ hiển thị.
+
+### 6.4 Các API endpoint
+
+Ba endpoint chính của app là:
+
+- GET /: trả về trang HTML.
+- POST /api/predict: dự đoán sentence tốt nhất cho question/context.
+- POST /api/compare: so sánh cosine và euclidean song song.
+- GET /api/examples: trả ví dụ mẫu.
+
+### 6.5 Vai trò của web demo trong project
+
+Web demo không chỉ là phần trình diễn giao diện. Về mặt kỹ thuật, nó xác nhận rằng pipeline sentence-selection có thể được đóng gói thành một dịch vụ nhỏ, dễ dùng, dễ kiểm tra. Đây là bước rất hữu ích nếu sau này muốn đưa project lên server hoặc tích hợp vào một hệ thống QA lớn hơn.
+
+---
+
+## 7. Hạn chế và hướng phát triển
+
+### 7.1 Hạn chế hiện tại
+
+1. BiLSTM chưa được nối vào runner chính. Mặc dù encoder đã implement, hiện nó chưa tham gia vào thí nghiệm chính thức.
+2. Web demo mới dừng ở TF-IDF unsupervised scoring. Chưa expose SBERT hay supervised model qua API.
+3. Bài toán vẫn ở mức chọn câu. Chưa có span extraction hoặc answer generation cuối cùng.
+4. Feature engineering supervised còn tương đối đơn giản. Chưa có cross-encoder hoặc ranking loss.
+5. Pipeline hiện được tối ưu cho tiếng Anh. Nếu chuyển sang tiếng Việt, tokenizer và dữ liệu cần thay đổi đáng kể.
+
+### 7.2 Hướng phát triển ngắn hạn
+
+1. Tích hợp BiLSTM vào experiment runner.
+2. Expose các model mạnh hơn trong web app.
+3. Thử thêm các biến thể metric và hyperparameter tuning.
+4. Chạy thêm error analysis theo nhóm question type.
+5. Tăng mức độ chi tiết của logging và lưu trữ experiment.
+
+### 7.3 Hướng phát triển dài hạn
+
+1. Fine-tune SBERT bằng contrastive hoặc ranking loss.
+2. Chuyển supervised sang learning-to-rank thay vì binary classification.
+3. Mở rộng sang multilingual sentence selection.
+4. Kết hợp sentence selection với span extraction để thành full QA pipeline.
+5. Đóng gói thành API service có monitoring và khả năng scale.
+
+### 7.4 Hướng phát triển nghiên cứu
+
+Về mặt nghiên cứu, project có thể mở rộng theo ba trục:
+
+- Trục biểu diễn: thay encoder bằng model ngữ nghĩa mạnh hơn.
+- Trục học máy: chuyển từ classification sang ranking.
+- Trục hệ thống: tối ưu speed, cache và deployment.
+
+---
+
+## 8. Kết luận
+
+Project đã xây dựng thành công một pipeline sentence-selection QA hoàn chỉnh từ dữ liệu, encoder, selector, evaluation cho đến demo web. Điểm mạnh lớn nhất của project là tính mô-đun: mỗi thành phần được tách rõ, dễ thay thế và dễ mở rộng.
+
+Từ thực nghiệm hiện tại có thể rút ra ba kết luận chính:
+
+- SBERT cho chất lượng tốt hơn TF-IDF trong hầu hết các cấu hình.
+- Supervised RF trên SBERT là mô hình mạnh nhất trong nhóm supervised.
+- TF-IDF baseline vẫn hữu ích vì tốc độ nhanh và chi phí thấp.
+
+Ở góc độ học thuật, đề tài cho thấy sự khác biệt giữa lexical matching và semantic matching, đồng thời minh họa rõ vai trò của supervised reranking trong sentence selection.
+
+---
+
+## 9. Tài liệu tham khảo
+
+[1] Rajpurkar, P., Zhang, J., Lopyrev, K., & Liang, P. (2016). SQuAD: 100,000+ Questions for Machine Comprehension of Text.
+
+[2] Reimers, N., & Gurevych, I. (2019). Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks. EMNLP 2019.
+
+[3] Robertson, S., & Zaragoza, H. (2009). The Probabilistic Relevance Framework: BM25 and Beyond.
+
+[4] Scikit-learn Documentation. https://scikit-learn.org/
+
+[5] Sentence-Transformers Documentation. https://www.sbert.net/
+
+[6] HuggingFace Datasets. https://huggingface.co/datasets/squad
+
+[7] NLTK Documentation. https://www.nltk.org/
+
+[8] XGBoost Documentation. https://xgboost.readthedocs.io/
+
+---
+
+## 10. Phụ lục
+
+### A. Lệnh chạy nhanh
+
 ```bash
 cd d:\2026\natural_language_processing\sentence_selection_qa
 
-# Core packages
-pip install datasets nltk scikit-learn numpy matplotlib
+# Cài dependencies chính
+pip install datasets nltk scikit-learn numpy matplotlib sentence-transformers xgboost rank_bm25 flask torch
 
-# Optional encoders
-pip install sentence-transformers       # SBERT
-pip install xgboost rank_bm25          # XGB, BM25
-pip install torch                       # BiLSTM (optional)
+# Download NLTK data
+python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
 
-# Download NLTK data (one-time)
-python -c "import nltk; nltk.download('punkt')"
-```
+# Tiền xử lý dữ liệu
+python main.py --mode preprocess --max_train 5000 --max_val 1000
 
-**Chạy Preprocess:**
-```bash
-python main.py --mode preprocess --max_train 1000 --max_val 200
-# Output: data/processed/train.json, val.json
-```
+# Chạy unsupervised experiments
+python main.py --mode unsupervised --max_train 5000 --max_val 1000
 
-**Chạy Unsupervised Experiments:**
-```bash
-python main.py --mode unsupervised --max_val 200 --use_sbert
-# Output: results/tables/unsupervised_results.json
-#         results/plots/unsupervised_*.png
-```
+# Chạy supervised experiments
+python main.py --mode supervised --max_train 5000 --max_val 1000
 
-**Chạy Supervised Experiments:**
-```bash
-python main.py --mode supervised --max_train 1000 --max_val 200 --use_sbert
-# Output: results/tables/supervised_results.json
-#         results/plots/supervised_*.png
-#         saved_models/*.pkl
-```
-
-**Chạy Demo CLI:**
-```bash
-python main.py --mode demo \
-  --question "Who invented Python?" \
-  --context "Guido van Rossum created Python in 1991. ..."
-
-# Output: Terminal display với scores từng câu
-```
-
-**Chạy So Sánh:**
-```bash
-python main.py --mode compare
-# Output: Combined table + plots
-```
-
-### 5.3 Demo Web Flask
-
-**Start Server:**
-```bash
-python run_webapp.py
-# Output: Listening on http://127.0.0.1:5000
-```
-
-**Truy Cập:**
-- Mở browser: `http://127.0.0.1:5000`
-- Giao diện có 3 tabs:
-  1. **Demo:** Nhập Q + context, chọn metric, xem scores
-  2. **Compare:** Side-by-side cosine vs euclidean
-  3. **About:** Mô tả pipeline, metrics, resources
-
-**Backend API:**
-- `POST /api/predict` – Predict sentence cho (Q, context)
-- `POST /api/compare` – So sánh 2 metrics
-- `GET /api/examples` – Lấy ví dụ
-
-**Encoder:** TF-IDF fit trên examples + validation data (nếu tồn tại)
-
----
-
-## VI. HẠN CHẾ VÀ HƯỚNG PHÁT TRIỂN
-
-### 6.1 Hạn Chế Hiện Tại
-
-1. **BiLSTM Encoder chưa tích hợp vào pipeline chính**
-   - Đã implement nhưng cần wiring thêm vào run_unsupervised/run_supervised
-   - Yêu cầu NLTK tokenization + vocabulary building
-
-2. **Supervised chỉ dùng binary classification**
-   - Không dùng ranking loss (triplet, contrastive)
-   - Có thể cải thiện bằng learning-to-rank approaches
-
-3. **Feature engineering cơ bản**
-   - Chỉ dùng similarity + element-wise operations
-   - Chưa include TF-IDF features (weighted tokens)
-
-4. **Tokenizer chỉ hỗ trợ tiếng Anh**
-   - NLTK punkt không hoạt động tốt với ngôn ngữ khác
-   - Cần custom tokenizers cho Tiếng Việt, Tiếng Trung
-
-5. **Web demo chỉ local**
-   - Không có public endpoint
-   - Encoder fit offline, chỉ serve locally
-
-6. **Error analysis định tính**
-   - Chủ yếu dùng heuristic (Jaccard similarity)
-   - Chưa dùng learned error classifier
-
-### 6.2 Hướng Phát Triển
-
-1. **Tích hợp BiLSTM**
-   - Thêm `BiLSTMEncoder` vào factory
-   - Train word2vec embeddings hoặc load GloVe
-   - So sánh BiLSTM vs pre-trained encoders
-
-2. **Fine-tune SBERT với ranking loss**
-   - CosineSimilarityLoss (supervised contrastive)
-   - TripletLoss cho (Q, S_positive, S_negative) triplets
-   - Có thể cải thiện 2-3% Acc@1
-
-3. **Xử lý đa ngôn ngữ**
-   - Support Tiếng Việt với custom tokenizer (pyvi / underthesea)
-   - Test cross-lingual transfer từ SQuAD (English) → SQuAD-VI
-   - Dùng multilingual SBERT model
-
-4. **Inference tối ưu**
-   - Quantization: INT8 quantize SBERT
-   - Distillation: Học BiLSTM từ SBERT
-   - Caching: Cache encoder states trên validation set
-
-5. **Production deployment**
-   - API hosting trên cloud (AWS Lambda / GCP Cloud Functions)
-   - Batch inference với batching
-   - Logging + monitoring
-
-6. **Kết hợp Dense Retrieval + Ranking**
-   - DPR-style dense retriever cho rapid retrieval
-   - Reranker (SBERT supervised) cho top-k sentences
-   - End-to-end training
-
-7. **Extend sang full QA**
-   - Span extraction trên selected sentences
-   - Combine sentence selection + span extraction pipeline
-   - Benchmark trên full SQuAD task
-
----
-
-## VII. KẾT LUẬN
-
-### 7.1 Tóm Tắt Đạt Được
-
-Đề tài đã thành công xây dựng một hệ thống sentence selection QA hoàn chỉnh bao gồm:
-
-✓ **Tiền xử lý:** Chuyển SQuAD từ span extraction → sentence selection format
-
-✓ **Embeddings:** Hiện thực 4 phương pháp (TF-IDF, SBERT, BiLSTM, BM25)
-
-✓ **Hai hướng tiếp cận:**
-  - Unsupervised: Dựa similarity metrics (cosine, euclidean)
-  - Supervised: Binary classification với feature engineering
-
-✓ **Evaluation:** Comprehensive metrics (Acc@k, MRR, F1) + error analysis
-
-✓ **Demo web:** Flask app cho phép test real-time
-
-✓ **Modular architecture:** Dễ mở rộng encoders, classifiers, metrics
-
-### 7.2 Kết Quả Chính
-
-**Performance:**
-- **Best model:** SBERT + RF (Supervised) → **75.65% Acc@1**
-- **Unsupervised baseline:** TF-IDF + Cosine → **72.44% Acc@1**
-- **Improvement:** +3.21% từ unsupervised
-- **Acc@5:** ~98.9% (rất mạnh)
-
-**Error Analysis:**
-- Lexical overlap bias: 32% errors
-- Paraphrase/semantic gap: 24% errors
-- Long context confusion: 28% errors
-- Khác: 16% errors
-
-### 7.3 Giá Trị Thực Tiễn
-
-1. **Retrieval component:** Có thể dùng làm bước 1 trong full QA pipeline
-2. **Language transfer:** Framework có thể mở rộng sang Tiếng Việt, Tiếng Trung
-3. **Production-ready:** Code modular, dễ integrate vào hệ thống
-4. **Benchmark:** Baseline mạnh để so sánh với mô hình mới
-
----
-
-## VIII. TÀI LIỆU THAM KHẢO
-
-[1] Rajpurkar, P., Zhang, M. J., Liang, P., & Liang, P. S. (2016). "SQuAD: 100,000+ Questions for Machine Comprehension of Text." arXiv preprint arXiv:1606.05017.
-
-[2] Devlin, J., Chang, M. W., Lee, K., & Toutanova, K. (2019). "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding." ICLR 2019.
-
-[3] Reimers, N., & Gurevych, I. (2019). "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks." EMNLP 2019.
-
-[4] Robertson, S. E., & Zaragoza, H. (2009). "The Probabilistic Relevance Framework: BM25 and Beyond." Now Publishers Inc.
-
-[5] Scikit-learn Documentation. https://scikit-learn.org/
-
-[6] PyTorch Documentation. https://pytorch.org/
-
-[7] Sentence-Transformers Documentation. https://www.sbert.net/
-
-[8] HuggingFace Datasets. https://huggingface.co/datasets/squad
-
----
-
-## IX. PHỤ LỤC
-
-### A. Lệnh Chạy Nhanh
-
-```bash
-# 1. Cài packages
-pip install datasets nltk scikit-learn numpy matplotlib
-pip install sentence-transformers xgboost rank_bm25 flask
-python -c "import nltk; nltk.download('punkt')"
-
-# 2. Preprocess
-python main.py --mode preprocess --max_train 1000 --max_val 200
-
-# 3. Unsupervised
-python main.py --mode unsupervised --max_val 200 --use_sbert
-
-# 4. Supervised
-python main.py --mode supervised --max_train 1000 --max_val 200 --use_sbert
-
-# 5. Compare
+# Gộp kết quả đã lưu
 python main.py --mode compare
 
-# 6. Web
+# Demo CLI
+python main.py --mode demo --question "Who created Python?" --context "Python was created by Guido van Rossum in 1991. It is widely used in data science."
+
+# Demo web
 python run_webapp.py
-# Open http://127.0.0.1:5000
 ```
 
-### B. Thông Số Mô Hình
+### B. Tham số mô hình
 
-**TF-IDF:**
+**TF-IDF**
+
 - n_components: 256
 - max_features: 50.000
 - ngram_range: (1, 2)
-- Normalization: L2
+- sublinear_tf: true
 
-**SBERT:**
-- Model: all-MiniLM-L6-v2
-- Batch size: 64
-- Device: auto (GPU if available)
-- Dimension: 384
+**SBERT**
 
-**BiLSTM:**
-- Embed dim: 100
-- Hidden dim: 128
-- Output dim: 256
-- Layers: 2
-- Pooling: max/mean/last
-- Activation: Tanh
+- model: all-MiniLM-L6-v2
+- output dimension: 384
+- batch size: 64
+- device: auto
 
-**Classifiers:**
-- LR: max_iter=1000, C=1.0
+**BM25**
+
+- k1: 1.5
+- b: 0.75
+
+**BiLSTM**
+
+- embed_dim: 100
+- hidden_dim: 128
+- output_dim: 256
+- num_layers: 2
+- pooling: max / mean / last
+
+**Classifier**
+
+- LR: max_iter=1000, C=1.0, solver=lbfgs
 - RF: n_estimators=200, max_depth=10
-- XGB: n_estimators=300, max_depth=6, lr=0.1
+- XGB: n_estimators=300, max_depth=6, learning_rate=0.1
 
-### C. File Output Chính
+### C. File output chính
 
-**Kết quả:**
-- `results/tables/unsupervised_results.json` – Metrics unsupervised
-- `results/tables/supervised_results.json` – Metrics supervised
-- `results/tables/all_results.csv` – Combined comparison
+- results/tables/unsupervised_results.json
+- results/tables/supervised_results.json
+- results/tables/all_results.csv
+- results/plots/unsupervised_acc_at_k.png
+- results/plots/supervised_acc_at_k.png
+- results/plots/all_mrr.png
+- results/plots/ablation_neg_ratio.png
+- results/error_analysis/tfidf_cosine_error_report.json
+- results/error_analysis/tfidf_lr_error_report.json
+- saved_models/tfidf_lr.pkl
+- saved_models/tfidf_rf.pkl
+- saved_models/tfidf_xgb.pkl
+- saved_models/sbert_lr.pkl
+- saved_models/sbert_rf.pkl
 
-**Models:**
-- `saved_models/tfidf_lr.pkl` – Saved LR
-- `saved_models/sbert_rf.pkl` – Saved RF
-- Etc.
+### D. Ghi chú về phiên bản hiện tại
 
-**Plots:**
-- `results/plots/unsupervised_acc_at_k.png` – Accuracy@k comparison
-- `results/plots/supervised_mrr.png` – MRR comparison
-- `results/plots/ablation_neg_ratio.png` – Ablation study
-
----
-
-**Ngày hoàn thành:** 13/05/2026
-
-**Trạng thái:** ✅ Hoàn tất
-
-**Người thực hiện:** Hồ Duy Trường
-
-**Giáo viên hướng dẫn:** TS. Bùi Thanh Hùng
+- Web app hiện thiên về demo unsupervised TF-IDF.
+- BiLSTM đã có code nhưng chưa được tích hợp vào runner.
+- Các số liệu trong phần kết quả khớp với các file JSON hiện có trong results/tables.
 
 ---
 
-*Báo cáo này được tạo dựa trên code thực tế và kết quả thực nghiệm từ dự án. Toàn bộ mã nguồn, dữ liệu, và kết quả được lưu tại: `d:\2026\natural_language_processing\sentence_selection_qa\`*
+**Trạng thái:** Hoàn tất theo code và kết quả hiện có trong project  
+**Ngày cập nhật:** 13/05/2026

@@ -14,7 +14,6 @@ python main.py --use_sbert              # include Sentence-BERT encoders
 python main.py --mode demo --question "Who discovered gravity?" \
                --context "Newton discovered gravity. Archimedes discovered buoyancy."
 """
-
 import argparse
 import json
 import os
@@ -44,7 +43,6 @@ def parse_args():
                    help="Skip feature ablation (faster)")
     p.add_argument("--neg_per_pos", type=int, default=3,
                    help="Negative examples per positive for supervised training")
-    # Demo mode args
     p.add_argument("--question", type=str, default=None, help="Demo question")
     p.add_argument("--context",  type=str, default=None, help="Demo context paragraph")
     return p.parse_args()
@@ -53,20 +51,13 @@ def parse_args():
 def mode_preprocess(args):
     from preprocessing.convert_dataset import load_and_convert
     print("STEP 1 — Data Preprocessing")
-    load_and_convert(save=True, max_train=args.max_train, max_val=args.max_val)
+    load_and_convert(max_train=args.max_train, max_val=args.max_val)
 
 # Mode: unsupervised
 def mode_unsupervised(args):
     from experiments.run_unsupervised import run_unsupervised_experiments
-    print("=" * 60)
     print("STEP 2 — Unsupervised Experiments")
-    print("=" * 60)
-    return run_unsupervised_experiments(
-        max_train              = args.max_train,
-        max_val                = args.max_val,
-        # use_sbert              = args.use_sbert,
-        run_error_analysis_flag= not args.no_error_analysis,
-    )
+    return run_unsupervised_experiments(max_train = args.max_train, max_val = args.max_val, run_error_analysis_flag= not args.no_error_analysis,)
 
 # Mode: supervised
 def mode_supervised(args):
@@ -77,7 +68,6 @@ def mode_supervised(args):
     return run_supervised_experiments(
         max_train              = args.max_train,
         max_val                = args.max_val,
-        # use_sbert              = args.use_sbert,
         neg_per_pos            = args.neg_per_pos,
         run_ablation           = not args.no_ablation,
         run_error_analysis_flag= not args.no_error_analysis,
@@ -162,15 +152,12 @@ def mode_demo(args):
     enc = TFIDFEncoder(n_components=min(32, len(sentences) + 1))
     all_texts = [question] + sentences
     enc.fit(all_texts)
-
     selector = UnsupervisedSelector(enc, metric="cosine")
     scores   = selector.score(question, sentences)
-
     print("\nScores (cosine similarity):")
     for i, (s, sc) in enumerate(zip(sentences, scores)):
         marker = " ◄ SELECTED" if i == int(scores.argmax()) else ""
         print(f"  [{i}] {sc:+.4f}  {s}{marker}")
-
     pred = selector.predict(question, sentences)
     print(f"\nSelected sentence [{pred}]: {sentences[pred]}")
 

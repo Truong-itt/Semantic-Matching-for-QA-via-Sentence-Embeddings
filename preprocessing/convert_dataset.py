@@ -19,6 +19,7 @@ import json
 import os
 from typing import Any, Dict, List
 from preprocessing.sentence_tokenizer import tokenize_sentences, find_answer_sentence_idx
+from datasets import load_dataset
 
 # Paths
 BASE_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -77,46 +78,32 @@ def convert_split(
             skipped += 1
         else:
             converted.append(result)
-
         if verbose and (i + 1) % 5000 == 0:
             print(f"  Processed {i+1}/{total} …")
-
     if verbose:
         print(f"  Done: {len(converted)} kept, {skipped} skipped.")
     return converted
 
-
 # Main entry point
-
 def load_and_convert(
-    save: bool = True,
     method: str = "nltk",
     max_train: int | None = None,
     max_val: int | None = None,
 ):
     """
-    Load SQuAD from HuggingFace *datasets*, convert both splits, and
-    optionally save the results as JSON files in ``data/processed/``.
-
+    Load SQuAD from HuggingFace *datasets*, convert both splits, and save
     Parameters
-    ----------
-    save      : bool – Persist converted data to JSON.
     method    : str  – Sentence tokenisation method (``'nltk'`` | ``'regex'``).
     max_train : int  – Truncate training set (useful for quick tests).
     max_val   : int  – Truncate validation set.
-
     Returns
-    -------
     train_data, val_data : List[dict], List[dict]
     """
-    from datasets import load_dataset  # deferred import
 
-    print("Loading SQuAD v1.1 …")
+    print("SQuAD v1.1 …")
     dataset = load_dataset("squad")
-
     train_raw = list(dataset["train"])
     val_raw   = list(dataset["validation"])
-
     if max_train:
         train_raw = train_raw[:max_train]
     if max_val:
@@ -127,18 +114,17 @@ def load_and_convert(
     print(f"\nConverting validation split ({len(val_raw)} samples) …")
     val_data = convert_split(val_raw, method=method)
 
-    if save:
-        os.makedirs(PROC_DIR, exist_ok=True)
-        train_path = os.path.join(PROC_DIR, "train.json")
-        val_path   = os.path.join(PROC_DIR, "val.json")
+    os.makedirs(PROC_DIR, exist_ok=True)
+    train_path = os.path.join(PROC_DIR, "train.json")
+    val_path   = os.path.join(PROC_DIR, "val.json")
 
-        with open(train_path, "w", encoding="utf-8") as f:
-            json.dump(train_data, f, ensure_ascii=False, indent=2)
-        print(f"\nTrain data saved → {train_path}")
+    with open(train_path, "w", encoding="utf-8") as f:
+        json.dump(train_data, f, ensure_ascii=False, indent=2)
+    print(f"\nTrain data saved → {train_path}")
 
-        with open(val_path, "w", encoding="utf-8") as f:
-            json.dump(val_data, f, ensure_ascii=False, indent=2)
-        print(f"Validation data saved → {val_path}")
+    with open(val_path, "w", encoding="utf-8") as f:
+        json.dump(val_data, f, ensure_ascii=False, indent=2)
+    print(f"Validation data saved → {val_path}")
     return train_data, val_data
 
 def load_processed(split: str = "train") -> List[Dict[str, Any]]:
