@@ -23,11 +23,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
-
 def _tokenize(text: str) -> List[str]:
     import re
     return re.findall(r"\b\w+\b", text.lower())
@@ -39,11 +35,7 @@ def _jaccard(a: List[str], b: List[str]) -> float:
         return 0.0
     return len(sa & sb) / len(sa | sb)
 
-
-# ---------------------------------------------------------------------------
 # Error collection
-# ---------------------------------------------------------------------------
-
 def collect_errors(
     selector,
     samples: List[Dict[str, Any]],
@@ -73,11 +65,7 @@ def collect_errors(
             })
     return errors
 
-
-# ---------------------------------------------------------------------------
 # Category: Lexical overlap bias
-# ---------------------------------------------------------------------------
-
 def lexical_overlap_analysis(errors: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Check if the *predicted* (wrong) sentence has higher lexical overlap
@@ -110,11 +98,7 @@ def lexical_overlap_analysis(errors: List[Dict[str, Any]]) -> Dict[str, Any]:
         "mean_gold_overlap"      : float(np.mean(gold_overlaps)) if gold_overlaps else 0.0,
     }
 
-
-# ---------------------------------------------------------------------------
 # Category: Long context confusion
-# ---------------------------------------------------------------------------
-
 def context_length_analysis(
     errors: List[Dict[str, Any]],
     all_samples: List[Dict[str, Any]],
@@ -150,11 +134,7 @@ def context_length_analysis(
         "error_rates" : error_rates,
     }
 
-
-# ---------------------------------------------------------------------------
 # Category: Semantic paraphrase difficulty
-# ---------------------------------------------------------------------------
-
 def paraphrase_difficulty(errors: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Heuristic: a "paraphrase error" occurs when the gold sentence has low
@@ -170,11 +150,7 @@ def paraphrase_difficulty(errors: List[Dict[str, Any]]) -> Dict[str, Any]:
         "examples"          : low_overlap[:5],
     }
 
-
-# ---------------------------------------------------------------------------
 # Full analysis pipeline
-# ---------------------------------------------------------------------------
-
 def run_error_analysis(
     selector,
     samples: List[Dict[str, Any]],
@@ -221,7 +197,6 @@ def run_error_analysis(
 
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
-
         # Save JSON (exclude verbose examples)
         report_copy = {k: v for k, v in report.items() if k != "paraphrase"}
         report_copy["paraphrase"] = {k: v for k, v in par_stats.items() if k != "examples"}
@@ -232,14 +207,9 @@ def run_error_analysis(
 
         # Plot: error rate by context length
         _plot_context_error_rate(ctx_stats, os.path.join(save_dir, f"{tag}_context_error.png"), tag)
-
     return report
 
-
-# ---------------------------------------------------------------------------
 # Plot helpers
-# ---------------------------------------------------------------------------
-
 def _plot_context_error_rate(ctx_stats: Dict, save_path: str, tag: str):
     buckets     = ctx_stats["buckets"]
     error_rates = ctx_stats["error_rates"]

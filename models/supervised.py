@@ -29,10 +29,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-
-# ---------------------------------------------------------------------------
 # Feature engineering
-# ---------------------------------------------------------------------------
 
 def build_pair_feature(
     q_vec: np.ndarray,
@@ -47,7 +44,6 @@ def build_pair_feature(
     elem_prod   : q · s  element-wise  (D,)
     abs_diff    : |q - s| (D,)
     concat      : [q, s]  (2D,)
-
     Total dimension: 1 + 3·D
     """
     cosine_sim = np.dot(q_vec, s_vec) / (
@@ -58,7 +54,6 @@ def build_pair_feature(
     concat    = np.concatenate([q_vec, s_vec])
 
     return np.concatenate([[cosine_sim], elem_prod, abs_diff, concat])
-
 
 def build_dataset(
     samples: List[Dict[str, Any]],
@@ -73,13 +68,10 @@ def build_dataset(
     ``neg_per_pos`` randomly chosen wrong sentences → label 0.
 
     Parameters
-    ----------
     samples     : list of dicts with keys question / sentences / label
     encoder     : object with encode(List[str]) → np.ndarray
     neg_per_pos : negative examples per positive
-
     Returns
-    -------
     X : (M, feature_dim)
     y : (M,)
     """
@@ -91,19 +83,15 @@ def build_dataset(
         sents       = sample["sentences"]
         label       = sample["label"]
         n_sents     = len(sents)
-
         if label >= n_sents:
             continue
-
         all_texts = [q] + sents
         vecs      = encoder.encode(all_texts)
         q_vec     = vecs[0]
         s_vecs    = vecs[1:]
-
         # Positive pair
         X_rows.append(build_pair_feature(q_vec, s_vecs[label]))
         y_rows.append(1)
-
         # Negative pairs
         neg_indices = [i for i in range(n_sents) if i != label]
         if neg_indices:
@@ -111,25 +99,17 @@ def build_dataset(
             for ni in chosen:
                 X_rows.append(build_pair_feature(q_vec, s_vecs[ni]))
                 y_rows.append(0)
-
     return np.array(X_rows, dtype=np.float32), np.array(y_rows, dtype=np.int32)
 
-
-# ---------------------------------------------------------------------------
 # Supervised Selector
-# ---------------------------------------------------------------------------
-
 class SupervisedSelector:
     """
     Sentence selector backed by a scikit-learn binary classifier.
-
     Parameters
-    ----------
     model_type : ``'lr'`` | ``'rf'`` | ``'xgb'``
     encoder    : encoder object (encode method)
     model_kwargs : extra kwargs passed to the underlying sklearn estimator
     """
-
     MODEL_REGISTRY = {
         "lr" : ("sklearn.linear_model", "LogisticRegression",
                 dict(max_iter=1000, C=1.0, solver="lbfgs", n_jobs=-1)),
@@ -141,24 +121,16 @@ class SupervisedSelector:
                      random_state=42, n_jobs=-1)),
     }
 
-    def __init__(
-        self,
-        model_type: str = "lr",
-        encoder = None,
-        **model_kwargs,
-    ):
+    def __init__(self, model_type: str = "lr", encoder = None, **model_kwargs,):
         self.model_type  = model_type
         self.encoder     = encoder
         self._clf        = None
         self._model_kwargs = model_kwargs
         self._build_clf()
 
-    # ------------------------------------------------------------------
     def _build_clf(self):
         if self.model_type not in self.MODEL_REGISTRY:
-            raise ValueError(
-                f"model_type must be one of {list(self.MODEL_REGISTRY)}."
-            )
+            raise ValueError(f"model_type must be one of {list(self.MODEL_REGISTRY)}.")
         module_name, cls_name, defaults = self.MODEL_REGISTRY[self.model_type]
         params = {**defaults, **self._model_kwargs}
         import importlib
@@ -166,12 +138,7 @@ class SupervisedSelector:
         cls    = getattr(module, cls_name)
         self._clf = cls(**params)
 
-    # ------------------------------------------------------------------
-    def train(
-        self,
-        samples: List[Dict[str, Any]],
-        neg_per_pos: int = 3,
-    ):
+    def train(self, samples: List[Dict[str, Any]], neg_per_pos: int = 3,):
         """
         Build feature matrix from *samples* and fit the classifier.
         """
@@ -182,7 +149,6 @@ class SupervisedSelector:
         print("Training complete.")
         return self
 
-    # ------------------------------------------------------------------
     def _score_sentences(
         self,
         question: str,
@@ -200,7 +166,6 @@ class SupervisedSelector:
         proba = self._clf.predict_proba(feats)[:, 1]   # P(positive class)
         return proba
 
-    # ------------------------------------------------------------------
     def predict(self, question: str, sentences: List[str]) -> int:
         """Return the index of the selected sentence."""
         scores = self._score_sentences(question, sentences)
@@ -211,7 +176,6 @@ class SupervisedSelector:
         k = min(k, len(sentences))
         return np.argsort(scores)[::-1][:k].tolist()
 
-    # ------------------------------------------------------------------
     def evaluate(
         self,
         samples: List[Dict[str, Any]],
@@ -226,17 +190,14 @@ class SupervisedSelector:
             q       = sample["question"]
             sents   = sample["sentences"]
             label   = sample["label"]
-
             scores  = self._score_sentences(q, sents)
             ranked  = np.argsort(scores)[::-1]
-
             for k in top_k_values:
                 if label in ranked[:k]:
                     hits[k] += 1
 
             rank = int(np.where(ranked == label)[0][0]) + 1 if label < len(sents) else len(sents)
             rr_sum += 1.0 / rank
-
         results: Dict[str, float] = {}
         for k in top_k_values:
             results[f"Accuracy@{k}"] = hits[k] / n
@@ -249,10 +210,8 @@ class SupervisedSelector:
             )
             line += f"  MRR: {results['MRR']:.4f}"
             print(line)
-
         return results
 
-    # ------------------------------------------------------------------
     def save(self, path: str):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:

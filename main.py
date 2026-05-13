@@ -24,11 +24,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-
-# ---------------------------------------------------------------------------
 # Argument parsing
-# ---------------------------------------------------------------------------
-
 def parse_args():
     p = argparse.ArgumentParser(
         description="Sentence Selection QA – main pipeline runner"
@@ -39,12 +35,9 @@ def parse_args():
         default="full",
         help="Pipeline mode to run (default: full)",
     )
-    p.add_argument("--max_train",  type=int,  default=5000,
-                   help="Max training samples to use (default: 5000)")
-    p.add_argument("--max_val",    type=int,  default=1000,
-                   help="Max validation samples to use (default: 1000)")
-    p.add_argument("--use_sbert",  action="store_true",
-                   help="Include Sentence-BERT encoder experiments")
+    p.add_argument("--max_train",  type=int,  default=5000, help="Max training samples to use (default: 5000)")
+    p.add_argument("--max_val",    type=int,  default=1000, help="Max validation samples to use (default: 1000)")
+    p.add_argument("--use_sbert",  action="store_true", help="Include Sentence-BERT encoder experiments")
     p.add_argument("--no_error_analysis", action="store_true",
                    help="Skip error analysis (faster)")
     p.add_argument("--no_ablation", action="store_true",
@@ -56,23 +49,13 @@ def parse_args():
     p.add_argument("--context",  type=str, default=None, help="Demo context paragraph")
     return p.parse_args()
 
-
-# ---------------------------------------------------------------------------
 # Mode: preprocess
-# ---------------------------------------------------------------------------
-
 def mode_preprocess(args):
     from preprocessing.convert_dataset import load_and_convert
-    print("=" * 60)
     print("STEP 1 — Data Preprocessing")
-    print("=" * 60)
     load_and_convert(save=True, max_train=args.max_train, max_val=args.max_val)
 
-
-# ---------------------------------------------------------------------------
 # Mode: unsupervised
-# ---------------------------------------------------------------------------
-
 def mode_unsupervised(args):
     from experiments.run_unsupervised import run_unsupervised_experiments
     print("=" * 60)
@@ -81,15 +64,11 @@ def mode_unsupervised(args):
     return run_unsupervised_experiments(
         max_train              = args.max_train,
         max_val                = args.max_val,
-        use_sbert              = args.use_sbert,
+        # use_sbert              = args.use_sbert,
         run_error_analysis_flag= not args.no_error_analysis,
     )
 
-
-# ---------------------------------------------------------------------------
 # Mode: supervised
-# ---------------------------------------------------------------------------
-
 def mode_supervised(args):
     from experiments.run_supervised import run_supervised_experiments
     print("=" * 60)
@@ -98,17 +77,13 @@ def mode_supervised(args):
     return run_supervised_experiments(
         max_train              = args.max_train,
         max_val                = args.max_val,
-        use_sbert              = args.use_sbert,
+        # use_sbert              = args.use_sbert,
         neg_per_pos            = args.neg_per_pos,
         run_ablation           = not args.no_ablation,
         run_error_analysis_flag= not args.no_error_analysis,
     )
 
-
-# ---------------------------------------------------------------------------
 # Mode: compare
-# ---------------------------------------------------------------------------
-
 def mode_compare(args):
     """Load saved result JSON files and print a combined comparison table."""
     from evaluation.metrics import (
@@ -141,7 +116,6 @@ def mode_compare(args):
 
     # Save combined CSV
     save_results_csv(combined, os.path.join(tables_dir, "all_results.csv"))
-
     # Combined plots
     plot_acc_at_k(
         combined,
@@ -155,11 +129,7 @@ def mode_compare(args):
         title="All Systems – MRR",
     )
 
-
-# ---------------------------------------------------------------------------
 # Mode: demo
-# ---------------------------------------------------------------------------
-
 def mode_demo(args):
     """Interactive demo: predict the answer sentence for a given (Q, context)."""
     from preprocessing.sentence_tokenizer import tokenize_sentences
@@ -204,42 +174,29 @@ def mode_demo(args):
     pred = selector.predict(question, sentences)
     print(f"\nSelected sentence [{pred}]: {sentences[pred]}")
 
-
-# ---------------------------------------------------------------------------
 # Main dispatcher
-# ---------------------------------------------------------------------------
-
 def main():
     args = parse_args()
-
     print("\n" + "#" * 70)
     print("#  Semantic Matching for QA via Sentence Embeddings")
     print("#  Mode: " + args.mode.upper())
     print("#" * 70 + "\n")
-
     if args.mode == "preprocess":
         mode_preprocess(args)
-
     elif args.mode == "unsupervised":
         mode_unsupervised(args)
-
     elif args.mode == "supervised":
         mode_supervised(args)
-
     elif args.mode == "compare":
         mode_compare(args)
-
     elif args.mode == "demo":
         mode_demo(args)
-
     elif args.mode == "full":
         mode_preprocess(args)
         unsup_res = mode_unsupervised(args)
         sup_res   = mode_supervised(args)
         mode_compare(args)
-
     print("\nDone.")
-
 
 if __name__ == "__main__":
     main()

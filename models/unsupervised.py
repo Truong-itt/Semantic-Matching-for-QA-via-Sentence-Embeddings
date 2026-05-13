@@ -16,22 +16,15 @@ from __future__ import annotations
 import numpy as np
 from typing import List, Tuple, Dict, Any
 
-
-# ---------------------------------------------------------------------------
 # Similarity functions
-# ---------------------------------------------------------------------------
-
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """
     Compute cosine similarity between vector *a* and each row of matrix *b*.
 
     Parameters
-    ----------
     a : (D,)       query vector
     b : (N, D)     sentence matrix
-
     Returns
-    -------
     similarities : (N,)
     """
     a_norm = a / (np.linalg.norm(a) + 1e-10)
@@ -42,24 +35,17 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def euclidean_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """
     Euclidean distances between vector *a* and each row of matrix *b*.
-
     Returns
-    -------
     distances : (N,)  – smaller means more similar
     """
     return np.linalg.norm(b - a, axis=1)   # (N,)
 
 
-# ---------------------------------------------------------------------------
 # Unsupervised selector
-# ---------------------------------------------------------------------------
-
 class UnsupervisedSelector:
     """
     Select the best-matching sentence for a question using vector similarity.
-
     Parameters
-    ----------
     encoder  : object  –  Must expose ``encode(List[str]) -> np.ndarray``.
     metric   : str     –  ``'cosine'`` (default) | ``'euclidean'``.
     """
@@ -68,7 +54,6 @@ class UnsupervisedSelector:
         self.encoder = encoder
         self.metric  = metric
 
-    # ------------------------------------------------------------------
     def score(
         self,
         question: str,
@@ -76,7 +61,6 @@ class UnsupervisedSelector:
     ) -> np.ndarray:
         """
         Return a similarity / distance score for each sentence.
-
         For cosine  : higher score → better match.
         For euclidean : lower score → better match  (negated before return
                         so that higher is always better – consistent API).
@@ -85,7 +69,6 @@ class UnsupervisedSelector:
         vecs     = self.encoder.encode(texts)
         q_vec    = vecs[0]            # (D,)
         s_vecs   = vecs[1:]           # (N, D)
-
         if self.metric == "cosine":
             return cosine_similarity(q_vec, s_vecs)
         elif self.metric == "euclidean":
@@ -93,7 +76,6 @@ class UnsupervisedSelector:
         else:
             raise ValueError(f"Unknown metric: {self.metric!r}")
 
-    # ------------------------------------------------------------------
     def predict(
         self,
         question: str,
@@ -103,7 +85,6 @@ class UnsupervisedSelector:
         scores = self.score(question, sentences)
         return int(np.argmax(scores))
 
-    # ------------------------------------------------------------------
     def predict_topk(
         self,
         question: str,
@@ -116,7 +97,6 @@ class UnsupervisedSelector:
         top_k    = np.argsort(scores)[::-1][:k]
         return top_k.tolist()
 
-    # ------------------------------------------------------------------
     def evaluate(
         self,
         samples: List[Dict[str, Any]],
@@ -125,48 +105,36 @@ class UnsupervisedSelector:
     ) -> Dict[str, float]:
         """
         Evaluate the selector on a list of samples.
-
         Each sample must have keys: ``question``, ``sentences``, ``label``.
-
         Returns a dict with Accuracy@k and MRR.
         """
         n = len(samples)
         hits   = {k: 0 for k in top_k_values}
         rr_sum = 0.0
-
         for sample in samples:
             q         = sample["question"]
             sents     = sample["sentences"]
             label     = sample["label"]
             scores    = self.score(q, sents)
             ranked    = np.argsort(scores)[::-1]
-
             for k in top_k_values:
                 if label in ranked[:k]:
                     hits[k] += 1
-
             rank = int(np.where(ranked == label)[0][0]) + 1 if label < len(sents) else len(sents)
             rr_sum += 1.0 / rank
-
         results: Dict[str, float] = {}
         for k in top_k_values:
             results[f"Accuracy@{k}"] = hits[k] / n
         results["MRR"] = rr_sum / n
-
         if verbose:
             line = f"[{self.metric.upper()}]  " + "  ".join(
                 f"Acc@{k}: {v:.4f}" for k, v in results.items() if k.startswith("Acc")
             )
             line += f"  MRR: {results['MRR']:.4f}"
             print(line)
-
         return results
 
-
-# ---------------------------------------------------------------------------
 # Comparison helper: Cosine vs Euclidean
-# ---------------------------------------------------------------------------
-
 def compare_metrics(
     encoder,
     samples: List[Dict[str, Any]],

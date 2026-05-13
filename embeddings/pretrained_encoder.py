@@ -11,11 +11,7 @@ from __future__ import annotations
 import numpy as np
 from typing import List, Optional
 
-
-# ---------------------------------------------------------------------------
 # Sentence-BERT Encoder
-# ---------------------------------------------------------------------------
-
 class SBERTEncoder:
     """
     Thin wrapper around a ``sentence-transformers`` model.
@@ -68,22 +64,16 @@ class SBERTEncoder:
     def encode_single(self, text: str) -> np.ndarray:
         return self.encode([text])[0]
 
-
-# ---------------------------------------------------------------------------
 # TF-IDF + Truncated SVD Encoder (no GPU / no heavy dependencies)
-# ---------------------------------------------------------------------------
-
 class TFIDFEncoder:
     """
     Lightweight encoder: TF-IDF vectoriser → Truncated SVD projection.
     Useful as a fast baseline or when GPU memory is limited.
 
     Parameters
-    ----------
     n_components : Latent dimensions after SVD (output vector size).
     max_features : TF-IDF vocabulary cap.
     """
-
     def __init__(
         self,
         n_components: int = 256,
@@ -127,10 +117,7 @@ class TFIDFEncoder:
         return self.encode([text])[0]
 
 
-# ---------------------------------------------------------------------------
 # BM25-based Encoder (sparse retrieval baseline)
-# ---------------------------------------------------------------------------
-
 class BM25Encoder:
     """
     BM25 scoring as a retrieval baseline (non-neural).
@@ -166,14 +153,10 @@ class BM25Encoder:
         return self._bm25.get_scores(tokens).astype(np.float32)
 
 
-# ---------------------------------------------------------------------------
 # Factory
-# ---------------------------------------------------------------------------
-
 def get_encoder(name: str, **kwargs):
     """
     Convenience factory.
-
     Parameters
     ----------
     name : ``'sbert'`` | ``'tfidf'`` | ``'bm25'``
@@ -187,7 +170,6 @@ def get_encoder(name: str, **kwargs):
         return BM25Encoder(**kwargs)
     else:
         raise ValueError(f"Unknown encoder: {name!r}. Choose sbert | tfidf | bm25.")
-
 
 if __name__ == "__main__":
     enc = TFIDFEncoder(n_components=64)

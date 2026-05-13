@@ -41,7 +41,6 @@ class BiLSTMEncoder(nn.Module):
     pooling     : ``'max'`` | ``'mean'`` | ``'last'``.
     pad_idx     : Index of the padding token.
     """
-
     def __init__(
         self,
         vocab_size: int,
@@ -75,7 +74,6 @@ class BiLSTMEncoder(nn.Module):
         self.projector = nn.Linear(hidden_dim * 2, output_dim)
         self.activation = nn.Tanh()
 
-    # ------------------------------------------------------------------
     def forward(
         self,
         input_ids: torch.LongTensor,
@@ -126,15 +124,12 @@ class BiLSTMEncoder(nn.Module):
         out = self.activation(self.projector(self.dropout(pooled)))  # (B, D)
         return out
 
-    # ------------------------------------------------------------------
     @staticmethod
     def _length_mask(
         lengths: torch.LongTensor, max_len: int, device: torch.device
     ) -> torch.BoolTensor:
         """Create a boolean mask from sequence lengths."""
         return torch.arange(max_len, device=device).unsqueeze(0) < lengths.unsqueeze(1)
-
-    # ------------------------------------------------------------------
     def load_pretrained_embeddings(
         self,
         word2vec: Dict[str, np.ndarray],
@@ -160,11 +155,7 @@ class BiLSTMEncoder(nn.Module):
         if freeze:
             self.embedding.weight.requires_grad = False
 
-
-# ---------------------------------------------------------------------------
 # Vocabulary builder
-# ---------------------------------------------------------------------------
-
 class SimpleVocab:
     """Build and manage a word vocabulary from a list of sentences."""
 
@@ -201,11 +192,7 @@ class SimpleVocab:
     def __len__(self):
         return len(self.word2idx)
 
-
-# ---------------------------------------------------------------------------
 # Batch encoding helper
-# ---------------------------------------------------------------------------
-
 def encode_batch(
     sentences: List[str],
     vocab: SimpleVocab,

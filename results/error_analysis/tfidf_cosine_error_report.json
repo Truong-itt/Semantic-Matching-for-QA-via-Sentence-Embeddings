@@ -1,43 +1,43 @@
 {
   "tag": "tfidf_cosine",
-  "n_total": 600,
-  "n_errors": 164,
-  "error_rate": 0.2733333333333333,
+  "n_total": 998,
+  "n_errors": 275,
+  "error_rate": 0.2755511022044088,
   "lexical_overlap": {
-    "n_errors": 164,
-    "lexical_bias_count": 121,
-    "lexical_bias_rate": 0.7378048780487805,
-    "mean_pred_overlap": 0.15416777860181755,
-    "mean_gold_overlap": 0.10513375513082
+    "n_errors": 275,
+    "lexical_bias_count": 194,
+    "lexical_bias_rate": 0.7054545454545454,
+    "mean_pred_overlap": 0.15822572760330056,
+    "mean_gold_overlap": 0.11501351876862229
   },
   "context_length": {
     "buckets": [
       "1-3",
       "3-4",
-      "4-5",
-      "5-8"
+      "4-6",
+      "6-16"
     ],
     "error_counts": [
-      13,
-      46,
-      57,
-      48
+      17,
+      61,
+      100,
+      97
     ],
     "total_counts": [
-      107,
-      189,
-      150,
-      154
+      157,
+      227,
+      342,
+      272
     ],
     "error_rates": [
-      0.12149532710280374,
-      0.24338624338624337,
-      0.38,
-      0.3116883116883117
+      0.10828025477707007,
+      0.2687224669603524,
+      0.29239766081871343,
+      0.35661764705882354
     ]
   },
   "paraphrase": {
-    "paraphrase_errors": 82,
-    "paraphrase_rate": 0.5
+    "paraphrase_errors": 119,
+    "paraphrase_rate": 0.43272727272727274
   }
 }

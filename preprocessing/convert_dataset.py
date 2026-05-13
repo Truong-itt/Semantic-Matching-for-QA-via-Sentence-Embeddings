@@ -18,22 +18,14 @@ Samples for which the answer sentence cannot be located are discarded.
 import json
 import os
 from typing import Any, Dict, List
-
 from preprocessing.sentence_tokenizer import tokenize_sentences, find_answer_sentence_idx
 
-
-# ---------------------------------------------------------------------------
 # Paths
-# ---------------------------------------------------------------------------
 BASE_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_DIR   = os.path.join(BASE_DIR, "data", "raw")
 PROC_DIR  = os.path.join(BASE_DIR, "data", "processed")
 
-
-# ---------------------------------------------------------------------------
 # Core conversion helpers
-# ---------------------------------------------------------------------------
-
 def convert_squad_sample(
     sample: Dict[str, Any],
     method: str = "nltk",
@@ -68,7 +60,6 @@ def convert_squad_sample(
         "label"    : label,
     }
 
-
 def convert_split(
     split_data: List[Dict[str, Any]],
     method: str = "nltk",
@@ -95,9 +86,7 @@ def convert_split(
     return converted
 
 
-# ---------------------------------------------------------------------------
 # Main entry point
-# ---------------------------------------------------------------------------
 
 def load_and_convert(
     save: bool = True,
@@ -135,7 +124,6 @@ def load_and_convert(
 
     print(f"\nConverting train split ({len(train_raw)} samples) …")
     train_data = convert_split(train_raw, method=method)
-
     print(f"\nConverting validation split ({len(val_raw)} samples) …")
     val_data = convert_split(val_raw, method=method)
 
@@ -151,16 +139,12 @@ def load_and_convert(
         with open(val_path, "w", encoding="utf-8") as f:
             json.dump(val_data, f, ensure_ascii=False, indent=2)
         print(f"Validation data saved → {val_path}")
-
     return train_data, val_data
-
 
 def load_processed(split: str = "train") -> List[Dict[str, Any]]:
     """
     Load already-converted data from disk.
-
     Parameters
-    ----------
     split : ``'train'`` | ``'val'``
     """
     path = os.path.join(PROC_DIR, f"{split}.json")
@@ -171,7 +155,6 @@ def load_processed(split: str = "train") -> List[Dict[str, Any]]:
         )
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
-
 
 if __name__ == "__main__":
     load_and_convert(save=True, max_train=1000, max_val=200)

@@ -24,9 +24,7 @@ import matplotlib
 matplotlib.use("Agg")   # headless rendering
 
 
-# ---------------------------------------------------------------------------
 # Core metric computation
-# ---------------------------------------------------------------------------
 
 def accuracy_at_k(ranked_lists: List[List[int]], labels: List[int], k: int) -> float:
     """
@@ -77,7 +75,6 @@ def precision_recall_f1(
     f1        = tp / n   # all three collapse to accuracy in 1-of-N setting
     return {"precision": precision, "recall": recall, "f1": f1, "accuracy": tp / n}
 
-
 def evaluate_selector(
     selector,
     samples: List[Dict[str, Any]],
@@ -97,7 +94,6 @@ def evaluate_selector(
     predictions  : List[int]       = []
 
     max_k = max(top_k_values)
-
     for sample in samples:
         q     = sample["question"]
         sents = sample["sentences"]
@@ -114,7 +110,6 @@ def evaluate_selector(
         predictions.append(ranked[0])
 
     results: Dict[str, float] = {}
-
     for k in top_k_values:
         results[f"Accuracy@{k}"] = accuracy_at_k(ranked_lists, labels, k)
         results[f"Recall@{k}"]   = results[f"Accuracy@{k}"]  # identical in 1-of-N
@@ -122,14 +117,9 @@ def evaluate_selector(
     results["MRR"] = mean_reciprocal_rank(ranked_lists, labels)
     prf            = precision_recall_f1(predictions, labels)
     results.update(prf)
-
     return results
 
-
-# ---------------------------------------------------------------------------
 # Table formatting
-# ---------------------------------------------------------------------------
-
 def format_results_table(
     results_dict: Dict[str, Dict[str, float]],
     metrics: Optional[List[str]] = None,
@@ -168,7 +158,6 @@ def format_results_table(
 
     return "\n".join(rows)
 
-
 def save_results_csv(
     results_dict: Dict[str, Dict[str, float]],
     path: str,
@@ -184,11 +173,7 @@ def save_results_csv(
             writer.writerow([system] + [f"{vals.get(m, float('nan')):.4f}" for m in all_metrics])
     print(f"Results CSV saved → {path}")
 
-
-# ---------------------------------------------------------------------------
 # Plotting
-# ---------------------------------------------------------------------------
-
 def plot_acc_at_k(
     results_dict: Dict[str, Dict[str, float]],
     k_values: Tuple[int, ...] = (1, 3, 5),
@@ -222,7 +207,6 @@ def plot_acc_at_k(
     ax.legend(loc="lower right")
     ax.grid(axis="y", alpha=0.3)
     plt.tight_layout()
-
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=150)
@@ -230,7 +214,6 @@ def plot_acc_at_k(
     else:
         plt.show()
     plt.close()
-
 
 def plot_mrr(
     results_dict: Dict[str, Dict[str, float]],
@@ -256,7 +239,6 @@ def plot_mrr(
     for bar, val in zip(bars, mrr_vals):
         ax.text(val + 0.005, bar.get_y() + bar.get_height() / 2,
                 f"{val:.4f}", va="center", fontsize=9)
-
     plt.tight_layout()
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -265,7 +247,6 @@ def plot_mrr(
     else:
         plt.show()
     plt.close()
-
 
 def plot_confusion_rank_distribution(
     selector,
@@ -292,7 +273,6 @@ def plot_confusion_rank_distribution(
             ranks.append(ranked.index(label) + 1)
         else:
             ranks.append(len(sents) + 1)
-
     max_rank = max(ranks)
     bins     = np.arange(0.5, min(max_rank + 1.5, 11.5), 1)
 
@@ -303,7 +283,6 @@ def plot_confusion_rank_distribution(
     ax.set_title(title)
     ax.grid(axis="y", alpha=0.3)
     plt.tight_layout()
-
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=150)
