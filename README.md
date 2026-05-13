@@ -1,7 +1,7 @@
 # Semantic Matching for QA via Sentence Embeddings
 ## Unsupervised vs Supervised Sentence Selection
 
-> **NLP Project** — Sentence Selection Question Answering on SQuAD v1.1
+> NLP project: sentence-selection question answering on SQuAD v1.1.
 
 ---
 
@@ -15,7 +15,7 @@
 6. [Quickstart](#6-quickstart)
 7. [Models](#7-models)
 8. [Evaluation](#8-evaluation)
-9. [Results (Expected)](#9-results-expected)
+9. [Results (Latest Run)](#9-results-latest-run)
 10. [Error Analysis](#10-error-analysis)
 11. [Extending the Project](#11-extending-the-project)
 
@@ -23,39 +23,37 @@
 
 ## 1. Problem Statement
 
-Standard **QA (Question Answering)** systems with SQuAD predict an exact **span** from a passage.
-This project simplifies the task to **Sentence Selection**:
+Standard QA systems on SQuAD predict an exact span from a passage. This project
+reframes the task as sentence selection:
 
-> Given a question **Q** and a context paragraph split into sentences **{S₁, S₂, …, Sₙ}**,
-> select the sentence **Sᵢ** most likely to contain the answer.
+> Given a question Q and a context paragraph split into sentences {S1, S2, ..., Sn},
+> select the sentence Si most likely to contain the answer.
 
 ### Input / Output
 
-| Key        | Description |
-|------------|-------------|
+| Key | Description |
+|-----|-------------|
 | `question` | Natural language question string |
-| `sentences`| List of sentences from the passage |
-| `label`    | Gold index — the sentence containing the answer span |
+| `sentences` | List of sentences from the passage |
+| `label` | Gold index of the sentence containing the answer span |
 
 ---
 
 ## 2. Dataset
 
-**SQuAD v1.1** — Stanford Question Answering Dataset
+The project uses **SQuAD v1.1** from HuggingFace `datasets`:
 
-| Split      | Samples (approx.) |
-|------------|-------------------|
-| Train      | 87 599            |
-| Validation | 10 570            |
-
-Loaded via HuggingFace `datasets`:
 ```python
 from datasets import load_dataset
 dataset = load_dataset("squad")
 ```
 
-The dataset is converted from span-extraction to sentence-selection format
-by the `preprocessing/convert_dataset.py` module.
+The raw span-extraction data is converted to sentence-selection format by
+`preprocessing/convert_dataset.py` and stored in `data/processed/` when the
+processed files are available.
+
+The default pipeline reads the processed local files first, then slices them by
+`--max_train` and `--max_val`.
 
 ---
 
@@ -63,46 +61,38 @@ by the `preprocessing/convert_dataset.py` module.
 
 ```
 sentence_selection_qa/
-│
-├── data/
-│   ├── raw/                 ← Raw SQuAD files (auto-downloaded)
-│   └── processed/           ← Converted sentence-selection JSON
-│       ├── train.json
-│       └── val.json
-│
-├── preprocessing/
-│   ├── __init__.py
-│   ├── sentence_tokenizer.py   ← NLTK / regex sentence splitter
-│   └── convert_dataset.py      ← SQuAD → sentence-selection converter
-│
-├── embeddings/
-│   ├── __init__.py
-│   ├── bilstm_encoder.py        ← PyTorch BiLSTM sentence encoder
-│   └── pretrained_encoder.py   ← TF-IDF/SVD, Sentence-BERT, BM25
-│
-├── models/
-│   ├── __init__.py
-│   ├── unsupervised.py     ← Cosine / Euclidean similarity selector
-│   └── supervised.py       ← LR / RF / XGBoost binary classifier
-│
-├── evaluation/
-│   ├── __init__.py
-│   ├── metrics.py          ← Acc@k, MRR, P/R/F1, plots
-│   └── error_analysis.py   ← Lexical bias, paraphrase, context length
-│
-├── experiments/
-│   ├── __init__.py
-│   ├── run_unsupervised.py ← Unsupervised experiment runner
-│   └── run_supervised.py   ← Supervised experiment runner
-│
-├── results/
-│   ├── tables/             ← CSV / JSON result files
-│   └── plots/              ← PNG comparison charts
-│
-├── saved_models/           ← Pickled sklearn classifiers
-│
-├── main.py                 ← Unified CLI entry point
-└── README.md               ← This file
+|
+|-- data/
+|   |-- raw/
+|   `-- processed/
+|
+|-- preprocessing/
+|   |-- sentence_tokenizer.py
+|   `-- convert_dataset.py
+|
+|-- embeddings/
+|   |-- bilstm_encoder.py
+|   `-- pretrained_encoder.py
+|
+|-- models/
+|   |-- unsupervised.py
+|   `-- supervised.py
+|
+|-- evaluation/
+|   |-- metrics.py
+|   `-- error_analysis.py
+|
+|-- experiments/
+|   |-- run_unsupervised.py
+|   `-- run_supervised.py
+|
+|-- results/
+|   |-- tables/
+|   `-- plots/
+|
+|-- saved_models/
+|-- main.py
+`-- README.md
 ```
 
 ---
@@ -111,7 +101,7 @@ sentence_selection_qa/
 
 ### Prerequisites
 
-- Python ≥ 3.10
+- Python 3.10 or newer
 - pip
 
 ### Install dependencies
@@ -120,7 +110,7 @@ sentence_selection_qa/
 pip install torch datasets nltk scikit-learn numpy matplotlib
 ```
 
-### Optional (for SBERT and XGBoost experiments)
+### Optional packages
 
 ```bash
 pip install sentence-transformers xgboost rank-bm25
@@ -131,7 +121,6 @@ pip install sentence-transformers xgboost rank-bm25
 ```python
 import nltk
 nltk.download("punkt")
-nltk.download("punkt_tab")
 ```
 
 ---
@@ -139,39 +128,31 @@ nltk.download("punkt_tab")
 ## 5. Pipeline Overview
 
 ```
-SQuAD v1.1 (HuggingFace)
-        │
-        ▼
-┌────────────────────────┐
-│  convert_dataset.py    │  • Sentence tokenization
-│                        │  • Locate answer sentence
-│                        │  → data/processed/{train,val}.json
-└───────────┬────────────┘
-            │
-     ┌──────┴──────┐
-     │             │
-     ▼             ▼
- UNSUPERVISED   SUPERVISED
-─────────────  ────────────
-Encode Q & S   Build (Q,Sᵢ) pair features:
-with TF-IDF /   - cosine_sim (scalar)
-SBERT / BM25    - elem_prod  (D-dim)
-     │          - abs_diff   (D-dim)
-     ▼          - concat     (2D-dim)
-Cosine sim /         │
-Euclidean       Train LR / RF / XGB
-distance             │
-     │               ▼
-     └───────────────┤
-                     ▼
-            ┌─────────────────┐
-            │   Evaluation    │
-            │  Acc@k / MRR    │
-            │   P/R/F1        │
-            │ Error Analysis  │
-            └────────┬────────┘
-                     ▼
-              results/ tables + plots
+SQuAD v1.1
+    |
+    v
+convert_dataset.py
+    |-- sentence tokenization
+    |-- locate answer sentence
+    v
+data/processed/{train,val}.json
+    |
+    +--------------------+
+    |                    |
+    v                    v
+Unsupervised        Supervised
+TF-IDF / SBERT /    (Q, Si) features -> LR / RF / XGB
+BM25 encoders
+    |                    |
+    v                    v
+Similarity score     Classification score
+    \                  /
+     \                /
+      v              v
+        Evaluation: Acc@k, MRR, P/R/F1
+                |
+                v
+         results/tables + plots
 ```
 
 ---
@@ -182,8 +163,11 @@ distance             │
 
 ```bash
 cd sentence_selection_qa
-python main.py --max_train 3000 --max_val 500
+python main.py
 ```
+
+The default `full` mode runs preprocessing, unsupervised experiments,
+supervised experiments, and the combined comparison table.
 
 ### Preprocess only
 
@@ -197,39 +181,46 @@ python main.py --mode preprocess --max_train 10000 --max_val 2000
 python main.py --mode unsupervised --max_val 1000
 ```
 
+This runner evaluates TF-IDF + Cosine, TF-IDF + Euclidean, BM25, and SBERT if
+`sentence-transformers` is installed.
+
 ### Supervised experiments only
 
 ```bash
 python main.py --mode supervised --max_train 5000 --max_val 1000
 ```
 
-### Generate comparison table from saved results
+This runner trains TF-IDF + LR/RF/XGB, SBERT + LR/RF, and adds the TF-IDF +
+Cosine unsupervised baseline for comparison.
+
+### Compare saved results
 
 ```bash
 python main.py --mode compare
 ```
 
-### Quick interactive demo
+### Demo mode
 
 ```bash
 python main.py --mode demo \
   --question "Who wrote Hamlet?" \
-  --context "William Shakespeare wrote Hamlet around 1600. \
-             Romeo and Juliet is another famous Shakespeare play. \
-             The Globe Theatre was built in 1599."
+  --context "William Shakespeare wrote Hamlet around 1600. Romeo and Juliet is another famous Shakespeare play. The Globe Theatre was built in 1599."
 ```
 
-### Include Sentence-BERT (if installed)
+### Include Sentence-BERT
 
 ```bash
 python main.py --mode full --use_sbert --max_train 5000 --max_val 500
 ```
 
+Note: the current experiment runners already try SBERT when the dependency is
+available, so `--use_sbert` is kept only for backward compatibility in the CLI.
+
 ---
 
 ## 7. Models
 
-### A — Unsupervised Baseline (`models/unsupervised.py`)
+### A. Unsupervised baseline (`models/unsupervised.py`)
 
 | System | Encoder | Similarity |
 |--------|---------|------------|
@@ -239,16 +230,22 @@ python main.py --mode full --use_sbert --max_train 5000 --max_val 500
 | SBERT + Euclidean | all-MiniLM-L6-v2 | Euclidean |
 | BM25 | Sparse TF | BM25 Okapi |
 
-### B — BiLSTM Encoder (`embeddings/bilstm_encoder.py`)
+The unsupervised runner evaluates TF-IDF and BM25 by default, then attempts
+SBERT and skips it gracefully if `sentence-transformers` is missing.
 
-- Random / GloVe word embeddings
+### B. BiLSTM encoder (`embeddings/bilstm_encoder.py`)
+
+- Random or GloVe word embeddings
 - 2-layer BiLSTM
-- Max-pool / Mean-pool / Last-state pooling
-- Linear projection to fixed output size
+- Max-pool, mean-pool, or last-state pooling
+- Linear projection to a fixed output size
 
-### C — Supervised Models (`models/supervised.py`)
+BiLSTM is implemented as a reusable encoder, but it is not currently wired into
+the main experiment runners.
 
-Feature vector per (Q, Sᵢ) pair:
+### C. Supervised models (`models/supervised.py`)
+
+Feature vector per (Q, Si) pair:
 
 | Feature | Dimension |
 |---------|-----------|
@@ -265,6 +262,9 @@ Classifiers:
 | Random Forest | scikit-learn |
 | XGBoost | xgboost |
 
+The supervised runner uses TF-IDF features by default, then trains SBERT-based
+variants when the dependency is installed.
+
 ---
 
 ## 8. Evaluation
@@ -273,53 +273,53 @@ Classifiers:
 
 | Metric | Description |
 |--------|-------------|
-| **Accuracy@k** | Gold sentence in top-k predictions |
-| **Recall@k** | Same as Acc@k in single-label setting |
-| **MRR** | Mean Reciprocal Rank |
-| **Precision** | Fraction of top-1 predictions that are correct |
-| **F1** | Harmonic mean of P and R |
+| Accuracy@k | Gold sentence appears in the top-k predictions |
+| Recall@k | Same as Acc@k in this single-label setup |
+| MRR | Mean Reciprocal Rank |
+| Precision | Fraction of top-1 predictions that are correct |
+| F1 | Harmonic mean of precision and recall |
 
-### Error Analysis Categories
+### Error analysis categories
 
 | Category | Description |
 |----------|-------------|
-| Lexical overlap bias | Wrong sentence shares more keywords with Q than gold |
-| Semantic paraphrase | Gold sentence has low word overlap with Q (different wording) |
-| Long context confusion | Error rate by number of sentences in context |
+| Lexical overlap bias | Wrong sentence shares more keywords with the question than the gold sentence |
+| Semantic paraphrase | Gold sentence has low word overlap with the question |
+| Long context confusion | Error rate by number of sentences in the context |
+
+The code writes error analysis artifacts to `results/error_analysis/` using tags
+such as `tfidf_cosine` and `tfidf_lr`.
 
 ---
 
-## 9. Results (Expected)
+## 9. Results (Latest Run)
 
-> Note: Actual results vary by train/val split size and random seed.
-> Run the pipeline to obtain concrete numbers.
+Latest saved results were produced with `--max_train 5000 --max_val 1000`.
+See `results/tables/unsupervised_results.json` and
+`results/tables/supervised_results.json` for the canonical outputs.
 
 | System | Acc@1 | Acc@3 | Acc@5 | MRR |
 |--------|-------|-------|-------|-----|
-| TF-IDF + Cosine | ~0.55 | ~0.78 | ~0.87 | ~0.65 |
-| TF-IDF + Euclidean | ~0.45 | ~0.70 | ~0.81 | ~0.56 |
-| BM25 | ~0.58 | ~0.80 | ~0.89 | ~0.67 |
-| SBERT + Cosine | ~0.72 | ~0.91 | ~0.95 | ~0.80 |
-| TF-IDF + LR | ~0.62 | ~0.83 | ~0.91 | ~0.71 |
-| TF-IDF + RF | ~0.60 | ~0.82 | ~0.90 | ~0.69 |
-| SBERT + LR | ~0.76 | ~0.93 | ~0.97 | ~0.84 |
+| TF-IDF + Cosine | 0.7244 | 0.9439 | 0.9850 | 0.8338 |
+| TF-IDF + Euclidean | 0.7244 | 0.9439 | 0.9850 | 0.8338 |
+| BM25 | 0.7214 | 0.9539 | 0.9850 | 0.8393 |
+| SBERT + Cosine | 0.7615 | 0.9599 | 0.9870 | 0.8594 |
+| SBERT + Euclidean | 0.7615 | 0.9599 | 0.9870 | 0.8594 |
+| TF-IDF + LR | 0.6964 | 0.9259 | 0.9760 | 0.8116 |
+| TF-IDF + RF | 0.7335 | 0.9369 | 0.9850 | 0.8356 |
+| TF-IDF + XGB | 0.7194 | 0.9489 | 0.9870 | 0.8337 |
+| SBERT + LR | 0.7555 | 0.9599 | 0.9830 | 0.8550 |
+| SBERT + RF | 0.7565 | 0.9539 | 0.9890 | 0.8568 |
 
-### Key Findings
+### Key findings
 
-1. **Cosine > Euclidean** — Cosine similarity consistently outperforms Euclidean
-   distance, likely because question and sentence lengths differ significantly.
-
-2. **SBERT > TF-IDF** — Pre-trained contextual embeddings capture semantic
-   paraphrase relationships that TF-IDF misses.
-
-3. **BM25 competitive** — Sparse BM25 is a strong baseline, especially for
-   factoid questions with strong lexical overlap.
-
-4. **Supervised > Unsupervised** — The binary classifier with pair features
-   outperforms direct similarity scoring, especially at Acc@1.
-
-5. **Top error type: Lexical bias** — ~40-50% of errors occur when a wrong
-   sentence has higher word overlap with the question.
+1. SBERT is the strongest encoder and is more robust to paraphrase than TF-IDF.
+2. SBERT + Cosine is the best overall model by Acc@1, while SBERT + RF is the
+   best supervised model.
+3. BM25 remains a strong baseline for factoid-style questions.
+4. TF-IDF + Euclidean is effectively tied with cosine in the current setup,
+   because both operate on normalized TF-IDF/SVD vectors.
+5. The dominant failure mode is lexical overlap bias.
 
 ---
 
@@ -327,10 +327,14 @@ Classifiers:
 
 Output files in `results/error_analysis/`:
 
-- `*_error_report.json` — JSON summary of all error categories
-- `*_context_error.png` — Error rate vs context length bar chart
+- `*_error_report.json` - JSON summary of the error categories
+- `*_context_error.png` - Error rate vs. context length chart
+
+The current runner creates reports for the best unsupervised TF-IDF cosine
+model and the best supervised TF-IDF LR model.
 
 Run standalone:
+
 ```python
 from evaluation.error_analysis import run_error_analysis
 run_error_analysis(selector, val_data, save_dir="results/error_analysis", tag="my_model")
@@ -353,16 +357,19 @@ run_error_analysis(selector, val_data, save_dir="results/error_analysis", tag="m
 ### Use full SQuAD
 
 ```bash
-python main.py --mode full --max_train 87000 --max_val 10000 --use_sbert
+python main.py --mode full --max_train 87000 --max_val 10000
 ```
+
+If you want a thesis-ready write-up, see `docs/BaoCao_Day_Du.md` for the
+expanded report with methodology, tables, and real experimental numbers.
 
 ### Extend to multi-sentence answer
 
-Modify `preprocessing/convert_dataset.py` to allow `label` to be a list of integers
-and update metrics accordingly.
+Modify `preprocessing/convert_dataset.py` to allow `label` to be a list of
+integers and update metrics accordingly.
 
 ---
 
 ## License
 
-MIT License — for academic and research use.
+MIT License - for academic and research use.
