@@ -294,22 +294,30 @@ such as `tfidf_cosine` and `tfidf_lr`.
 
 ## 9. Results (Latest Run)
 
-Latest saved results were produced with `--max_train 5000 --max_val 1000`.
+Latest saved results were produced with `python main.py --mode compare` after
+training with `--max_train 5000 --max_val 1000`.
 See `results/tables/unsupervised_results.json` and
-`results/tables/supervised_results.json` for the canonical outputs.
+`results/tables/supervised_results.json` for the canonical metric sources.
 
-| System | Acc@1 | Acc@3 | Acc@5 | MRR |
-|--------|-------|-------|-------|-----|
-| TF-IDF + Cosine | 0.7244 | 0.9439 | 0.9850 | 0.8338 |
-| TF-IDF + Euclidean | 0.7244 | 0.9439 | 0.9850 | 0.8338 |
-| BM25 | 0.7214 | 0.9539 | 0.9850 | 0.8393 |
-| SBERT + Cosine | 0.7615 | 0.9599 | 0.9870 | 0.8594 |
-| SBERT + Euclidean | 0.7615 | 0.9599 | 0.9870 | 0.8594 |
-| TF-IDF + LR | 0.6964 | 0.9259 | 0.9760 | 0.8116 |
-| TF-IDF + RF | 0.7335 | 0.9369 | 0.9850 | 0.8356 |
-| TF-IDF + XGB | 0.7194 | 0.9489 | 0.9870 | 0.8337 |
-| SBERT + LR | 0.7555 | 0.9599 | 0.9830 | 0.8550 |
-| SBERT + RF | 0.7565 | 0.9539 | 0.9890 | 0.8568 |
+| System | Acc@1 | Acc@3 | Acc@5 | MRR | f1 |
+|--------|-------|-------|-------|-----|----|
+| TF-IDF + Cosine | 0.7244 | 0.9439 | 0.9850 | 0.8338 | 0.7244 |
+| TF-IDF + Euclidean | 0.7244 | 0.9439 | 0.9850 | 0.8338 | 0.7244 |
+| BM25 | 0.7214 | 0.9539 | 0.9850 | 0.8393 | 0.7214 |
+| SBERT + Cosine | 0.7615 | 0.9599 | 0.9870 | 0.8594 | 0.7615 |
+| SBERT + Euclidean | 0.7615 | 0.9599 | 0.9870 | 0.8594 | 0.7615 |
+| TF-IDF + LR | 0.6964 | 0.9259 | 0.9760 | 0.8116 | 0.6964 |
+| TF-IDF + RF | 0.7335 | 0.9369 | 0.9850 | 0.8356 | 0.7335 |
+| TF-IDF + XGB | 0.7194 | 0.9489 | 0.9870 | 0.8337 | 0.7194 |
+| SBERT + LR | 0.7555 | 0.9599 | 0.9830 | 0.8550 | 0.7555 |
+| SBERT + RF | 0.7565 | 0.9539 | 0.9890 | 0.8568 | 0.7565 |
+| TF-IDF + Cosine (Unsup) | 0.7244 | 0.9439 | 0.9850 | 0.8338 | 0.7244 |
+| tfidf_LR_neg1 | 0.7034 | 0.9319 | 0.9770 | 0.8154 | 0.7034 |
+| tfidf_LR_neg3 | 0.6964 | 0.9259 | 0.9760 | 0.8116 | 0.6964 |
+| tfidf_LR_neg5 | 0.6954 | 0.9309 | 0.9780 | 0.8105 | 0.6954 |
+
+The compare mode also regenerates `results/tables/all_results.csv` and the
+plots in `results/plots/`.
 
 ### Key findings
 
